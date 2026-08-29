@@ -10,9 +10,12 @@
     "convert": "node tools/convert-ply.mjs"
   },
   "dependencies": {
+    "@fontsource/liu-jian-mao-cao": "^5.3.0",
+    "@fontsource/long-cang": "^5.3.0",
     "@fontsource/ma-shan-zheng": "^5.3.0",
     "@fontsource/noto-serif-sc": "^5.2.8",
     "@fontsource/zcool-xiaowei": "^5.3.0",
+    "@fontsource/zhi-mang-xing": "^5.3.0",
     "@mediapipe/tasks-vision": "^0.10.18",
     "three": "^0.170.0"
   },

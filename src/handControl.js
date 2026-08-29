@@ -46,7 +46,7 @@ export class HandControl {
     this.modLength = 5; // 计数循环长度(新增模型后更新)
     // 数学映射参数
     this.cfg = {
-      spinSpeed: 21,          // °/s
+      spinSpeed: 12,          // °/s
       rotSens: 1,             // 旋转灵敏度倍率
       smoothTau: 0.5,         // s (平滑窗口 2s ≈ tau 0.5)
       dispTau: 1.0,           // 爆散平滑(平滑窗口 2s)
@@ -120,6 +120,15 @@ export class HandControl {
       st.ryTarget = ryTarget;
       st.rxTarget = rxTarget;
 
+      // ---- 双手拉距 -> 缩放 ----
+      if (hands.length >= 2) {
+        const a = hands[0][0], b = hands[1][0];
+        const dx = (1 - a.x) - (1 - b.x), dy = a.y - b.y;
+        const d = Math.hypot(dx, dy); // 0.15(合) .. 0.6(开)
+        const z = THREE_MAP(d, 0.15, 0.6) * 2.1 + 0.45; // -> 0.45..2.55
+        st.zoom = damp(st.zoom ?? 1, z, 0.35, dt);
+      }
+
       // ---- 捏合 -> 计数 ----
       const pinch = pinchDistance(lm);
       if (st.pinchArmed && pinch < this.cfg.pinchEnter) {
@@ -182,6 +191,9 @@ export class HandControl {
   getDisp() {
     return this.state.disp;
   }
+  getZoom() {
+    return this.state.zoom ?? 1;
+  }
 }
 
 // 归一化 0..1 -> [a,b] 线性映射
@@ -193,7 +205,7 @@ function deg2rad(d) {
 }
 
 // pinch_midpoint:distance 的近似: 拇指尖-食指尖距离 / 手掌尺度
-// TD/MediaPipe 组件的 distance 为归一化值, 张开 ~0.3+, 捏合 <0.06
+// MediaPipe 的 distance 为归一化值, 张开 ~0.3+, 捏合 <0.06
 function pinchDistance(lm) {
   const dx = lm[4].x - lm[8].x, dy = lm[4].y - lm[8].y, dz = (lm[4].z ?? 0) - (lm[8].z ?? 0);
   const d = Math.hypot(dx, dy, dz);

@@ -3,7 +3,11 @@ import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { makePointsMaterial } from "./pointCloud.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { FilmPass } from "three/addons/postprocessing/FilmPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { VignetteShader } from "three/addons/shaders/VignetteShader.js";
+import { makePointsMaterial, loadBPC } from "./pointCloud.js";
 
 export class Stage {
   constructor(canvas) {
@@ -11,18 +15,22 @@ export class Stage {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
     this.renderer.setClearColor(0x000000, 1);
     this.scene = new THREE.Scene();
-    // 正向视图: 面具占画面宽 ~55-60%,四周留呼吸空间
-    this.camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
-    this.camera.position.set(0, 1.8, 6.4);
-    this.camera.lookAt(0, 1.5, 0);
+    // 相机: fov=45, 位置(0,0,5), 朝向原点(near .1 far 1000)
+    this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+    this.camera.position.set(0, 0, 5);
+    this.camera.lookAt(0, 0, 0);
 
-    // 面具根组: 旋转作用在这一层
+    // 面具根组: 手势旋转作用在这一层
     this.maskRoot = new THREE.Group();
-    this.maskRoot.position.y = 0.1;
     this.scene.add(this.maskRoot);
 
-    // 当前/下一组面具,交叉淡切(交叉淡切)
-    this.current = null; // { points, material, def }
+    // 背景粒子云(两层实例数据)
+    this.bgClouds = [];
+    this._bgRoot = new THREE.Group();
+    this.scene.add(this._bgRoot);
+
+    // 当前/下一组面具,交叉淡切(1s 淡切)
+    this.current = null; // { points, material, def, ghosts[] }
     this.incoming = null;
 
     this._initStars();
@@ -31,20 +39,81 @@ export class Stage {
     this._initComposer();
 
     this.params = {
-      pointSize: 1.6,
+      pointSize: 1,
       dispPower: 2,
     };
+    this.zoom = 1;
 
     this._resize();
     window.addEventListener("resize", () => this._resize());
   }
 
   _initComposer() {
+    const w = window.innerWidth, h = window.innerHeight;
     const composer = new EffectComposer(this.renderer);
+    // EDL 需要 depth:共享 depthTexture 挂到两个 ping-pong 缓冲(composer clone 会分离)
+    this._depthTex = new THREE.DepthTexture(w, h);
+    // RenderPass 固定渲染进 readBuffer(renderTarget2);深度纹理只挂 rt2,
+    // 否则 EDL 写入 rt1 时会同时读写同一深度附件(GL 未定义行为,读回恒定值)。
+    // 注意:交换型 pass(EDL/bloom/film/vignette)须保持偶数个,保证下一帧场景仍渲进 rt2
+    composer.renderTarget2.depthTexture = this._depthTex;
     composer.addPass(new RenderPass(this.scene, this.camera));
-    // 克制辉光——只对高亮粒子发光,保住内部色彩层次
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.32, 0.35, 0.55);
+    // EDL 点云深度着色(potree 算法, BSD-2): 邻域深度对数差暗化,雕纹凹槽出立体感
+    this.edl = new ShaderPass({
+      uniforms: {
+        tDiffuse: { value: null },
+        tDepth: { value: this._depthTex },
+        uStrength: { value: 0.55 },
+        uRadius: { value: 2.0 },
+        uNear: { value: this.camera.near },
+        uFar: { value: 60 },
+        uResolution: { value: new THREE.Vector2(w, h) },
+      },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: /* glsl */ `
+        precision highp float;
+        uniform sampler2D tDiffuse;
+        uniform sampler2D tDepth;
+        uniform float uStrength, uRadius, uNear, uFar;
+        uniform vec2 uResolution;
+        varying vec2 vUv;
+        float linearZ(vec2 uv) {
+          float d = texture2D(tDepth, uv).x;
+          return (uNear * uFar) / (uFar - d * (uFar - uNear));
+        }
+        void main() {
+          vec4 col = texture2D(tDiffuse, vUv);
+          float zc = linearZ(vUv);
+          if (zc > uFar * 0.9) { gl_FragColor = col; return; } // 天空不处理
+          vec2 texel = 1.0 / uResolution;
+          float shade = 0.0;
+          float lc = log(zc);
+          const vec4 ox = vec4(-1.0, 1.0, 0.0, 0.0);
+          const vec4 oy = vec4(0.0, 0.0, -1.0, 1.0);
+          for (int i = 0; i < 4; i++) {
+            float zn = linearZ(vUv + vec2(ox[i], oy[i]) * texel * uRadius);
+            shade += clamp(exp(-6.0 * abs(lc - log(max(zn, 1e-4)))), 0.0, 1.0);
+          }
+          shade *= 0.25;
+          float f = mix(1.0, shade, uStrength);
+          gl_FragColor = vec4(col.rgb * f, col.a);
+        }`,
+    });
+    composer.addPass(this.edl);
+    // 轻辉光,threshold 高保色彩
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.7, 0.55, 0.42);
     composer.addPass(this.bloom);
+    // 胶片颗粒(灰度) + 暗角 —— 黑白纪录片质感(three/addons 自带)
+    this.film = new FilmPass(0.32, true);
+    composer.addPass(this.film);
+    this.vignette = new ShaderPass(VignetteShader);
+    this.vignette.uniforms.offset.value = 1.35;
+    this.vignette.uniforms.darkness.value = 0.42;
+    composer.addPass(this.vignette);
+    // linear → sRGB 输出(没有它整帧偏暗)
+    composer.addPass(new OutputPass());
     this.composer = composer;
   }
 
@@ -52,24 +121,51 @@ export class Stage {
     const w = window.innerWidth, h = window.innerHeight;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    const pr = Math.min(window.devicePixelRatio, 2);
+    const pr = this._targetPR ?? Math.min(window.devicePixelRatio, 2);
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h);
     this.composer.setPixelRatio(pr);
     this.composer.setSize(w, h);
-    const prU = Math.min(window.devicePixelRatio, 2);
+    // 重建共享深度纹理(RT.setSize 不会同步 depthTexture)
+    if (this._depthTex) this._depthTex.dispose();
+    this._depthTex = new THREE.DepthTexture(w * pr, h * pr);
+    this.composer.renderTarget2.depthTexture = this._depthTex;
+    if (this.edl) {
+      this.edl.uniforms.tDepth.value = this._depthTex;
+      this.edl.uniforms.uResolution.value.set(w * pr, h * pr);
+    }
     for (const m of [this.current, this.incoming]) {
-      if (m) m.points.material.uniforms.uPixelRatio.value = prU;
+      if (!m) continue;
+      for (const p of [m.points, ...(m.ghosts ?? [])]) {
+        p.material.uniforms.uPixelRatio.value = pr;
+        p.material.uniforms.uViewH.value = h * pr;
+      }
     }
   }
 
   // ---------- 面具管理 ----------
   _makePoints(geometry, def) {
+    // 导出数据已含全部变换(姿态/缩放 baked),用户模型则按 BPC 解析器归一化
     const mat = makePointsMaterial({ pointSize: this.params.pointSize });
     const points = new THREE.Points(geometry, mat);
-    const s = def.baseScale ?? 2.6;
+    const s = def.baseScale ?? 1;
     points.scale.setScalar(s);
-    points.rotation.x = THREE.MathUtils.degToRad(def.baseTilt ?? 0);
+    // 反馈光晕层(历史帧累积轨迹)
+    const ghosts = [];
+    const GHOSTS = [
+      { g: 1, alpha: 0.42 },
+      { g: 2, alpha: 0.28 },
+      { g: 3, alpha: 0.17 },
+      { g: 4, alpha: 0.10 },
+    ];
+    for (const gh of GHOSTS) {
+      const gm = makePointsMaterial({ pointSize: this.params.pointSize, ghost: gh.g, opacity: gh.alpha });
+      const gp = new THREE.Points(geometry, gm);
+      gp.scale.setScalar(s);
+      gp.userData.baseOpacity = gh.alpha;
+      ghosts.push(gp);
+      points.add(gp); // 挂在主层下,跟随旋转
+    }
     return points;
   }
 
@@ -79,55 +175,60 @@ export class Stage {
       this.maskRoot.remove(this.current.points);
       this.current.points.geometry.dispose();
       this.current.points.material.dispose();
+      for (const gp of this.current.ghosts ?? []) gp.material.dispose();
     }
     const points = this._makePoints(geometry, def);
     points.material.uniforms.uOpacity.value = 1;
+    for (const gp of points.ghosts ?? []) gp.material.uniforms.uOpacity.value = gp.userData.baseOpacity;
     this.maskRoot.add(points);
-    this.current = { points, def };
+    this.current = { points, def, ghosts: points.ghosts ?? [] };
     this.incoming = null;
   }
 
-  // 捏合切换:交叉淡切到 index 指定的模型(1s 交叉淡切)
-  async transitionTo(loaderFn, defs, index, duration = 1000) {
+  // 切换:瞬间硬切 — 旧面具立即移除,新面具立即全量显示,无淡入淡出无重叠
+  async transitionTo(loaderFn, defs, index) {
     const def = defs[index];
     if (!def) return;
     if (this.current && this.current.def.key === def.key) return;
-    // 上一次淡切还没结束:先把 incoming 提升为 current(跳到终态)
-    if (this._fade && this.incoming) {
-      if (this.current) {
-        this.maskRoot.remove(this.current.points);
-        this.current.points.geometry.dispose();
-        this.current.points.material.dispose();
-      }
-      this.current = this.incoming;
-      this.current.points.material.uniforms.uOpacity.value = 1;
-      this.incoming = null;
-      this._fade = null;
-    }
     const geometry = await loaderFn(def);
     if (!geometry) return;
     // 等待加载期间目标又变了,放弃
     if (this.current && this.current.def.key === def.key) return;
-
-    if (this.incoming) {
-      this.maskRoot.remove(this.incoming.points);
-      this.incoming.points.geometry.dispose();
-      this.incoming.points.material.dispose();
-      this.incoming = null;
-    }
-    const points = this._makePoints(geometry, def);
-    points.material.uniforms.uOpacity.value = 0;
-    this.maskRoot.add(points);
-    this.incoming = { points, def };
-    this._fade = { t0: performance.now(), duration };
+    // 瞬间替换(与 showModel 同路径)
+    this.showModel(def, geometry);
+    this._fade = null;
   }
 
   setDisp(v) {
     const target = v * this.params.dispPower;
     for (const m of [this.current, this.incoming]) {
-      if (m) m.points.material.uniforms.uDisp.value = target;
+      if (!m) continue;
+      m.points.material.uniforms.uDisp.value = target;
+      for (const gp of m.ghosts ?? []) gp.material.uniforms.uDisp.value = target;
     }
     if (this.stars) this.stars.material.uniforms.uKick.value = Math.min(1.5, target * 0.4);
+  }
+
+  // ---------- 背景粒子云 ----------
+  // manifest.background 由导出工具生成;不存在时静默跳过(保留近似星空)
+  async loadBackground(manifest) {
+    const bg = manifest?.background;
+    if (!bg) return;
+    const jobs = [];
+    for (const [key, def] of Object.entries(bg)) {
+      const url = def.url ?? `./models/${key}.tdp.gz`;
+      jobs.push(
+        loadBPC(url).then(({ geometry }) => {
+          // 原始坐标直接渲染(bg-a 近距蓝紫云与面具同空间, bg-b ±26 环境云)
+          const spriteScale = def["transform1.scale"] ?? def["transform3.scale"] ?? 0.005;
+          const mat = makePointsMaterial({ pointSize: spriteScale / 0.005, opacity: def.opacity ?? 0.9 });
+          const pts = new THREE.Points(geometry, mat);
+          this._bgRoot.add(pts);
+          this.bgClouds.push(pts);
+        }).catch((e) => console.warn(`背景云 ${key} 加载失败`, e))
+      );
+    }
+    await Promise.all(jobs);
   }
 
   // ---------- 星空背景(星尘): 稀疏暖白金为主,不抢主体 ----------
@@ -137,13 +238,13 @@ export class Stage {
     const col = new Float32Array(N * 3);
     const seed = new Float32Array(N);
     const palette = [
-      [1.0, 0.92, 0.75], // 暖白金 (80%)
-      [1.0, 0.92, 0.75],
-      [1.0, 0.92, 0.75],
-      [1.0, 0.92, 0.75],
-      [1.0, 0.84, 0.5],  // 金
-      [0.9, 0.55, 0.45], // 微红
-      [0.6, 0.72, 0.95], // 微蓝
+      [1.0, 1.0, 1.0],   // 纯白 (80%)
+      [1.0, 1.0, 1.0],
+      [1.0, 1.0, 1.0],
+      [1.0, 1.0, 1.0],
+      [0.82, 0.82, 0.82], // 亮灰
+      [0.65, 0.65, 0.65], // 中灰
+      [0.5, 0.5, 0.5],    // 暗灰
     ];
     for (let i = 0; i < N; i++) {
       const r = 7 + Math.random() * 16;
@@ -235,20 +336,22 @@ export class Stage {
           vec2 q = vec2(fbm(uv * 2.6 + t), fbm(uv * 2.6 - t * 0.7 + 5.2));
           float n = fbm(uv * 3.2 + q * 1.4 + vec2(t * 0.5, -t * 0.3));
           // 双色云:暗金主调 + 少量青/紫
-          vec3 gold = vec3(0.32, 0.24, 0.11);
-          vec3 teal = vec3(0.07, 0.14, 0.17);
-          vec3 violet = vec3(0.14, 0.08, 0.16);
+          // 黑白配色: 灰阶云气
+          vec3 g1 = vec3(0.30, 0.30, 0.31);
+          vec3 g2 = vec3(0.10, 0.10, 0.11);
+          vec3 g3 = vec3(0.20, 0.19, 0.20);
           float m = fbm(uv * 1.7 - q * 0.8 + 3.7);
-          vec3 col = mix(gold, teal, smoothstep(0.35, 0.75, m));
-          col = mix(col, violet, smoothstep(0.62, 0.95, m) * 0.55);
+          vec3 col = mix(g1, g2, smoothstep(0.35, 0.75, m));
+          col = mix(col, g3, smoothstep(0.62, 0.95, m) * 0.55);
           float glow = pow(smoothstep(0.28, 0.85, n), 1.6);
           // 中心暖光晕(衬托面具) + 边缘暗角
           float r = length(uv - vec2(0.5, 0.52));
           float halo = exp(-r * r * 5.5) * 0.5;
           float vig = smoothstep(1.25, 0.35, r);
           vec3 out3 = col * glow * (0.55 + halo) * vig;
-          out3 += vec3(0.05, 0.038, 0.02) * halo * vig; // 纯暖光底
+          out3 += vec3(0.045, 0.045, 0.048) * halo * vig; // 中性光底
           out3 *= 1.0 + uKick * 0.8; // 握拳爆散时星云呼吸
+          out3 *= 0.28; // 背景近黑,星云只做极暗的底纹
           gl_FragColor = vec4(out3, 1.0);
         }`,
       depthTest: false,
@@ -279,17 +382,24 @@ export class Stage {
       return g;
     };
     this.lanterns.add(
-      mk(0xf5d489, 0.05, new THREE.Vector3(-2.2, 1.6, -1.2), 0.22),
-      mk(0xe8b45a, 0.04, new THREE.Vector3(2.4, 0.9, -1.6), 0.16),
-      mk(0xfff0c2, 0.03, new THREE.Vector3(1.9, 2.2, -0.8), 0.3)
+      mk(0xf0f0f0, 0.05, new THREE.Vector3(-2.2, 1.6, -1.2), 0.22),
+      mk(0xc8c8c8, 0.04, new THREE.Vector3(2.4, 0.9, -1.6), 0.16),
+      mk(0xffffff, 0.03, new THREE.Vector3(1.9, 2.2, -0.8), 0.3)
     );
     this.scene.add(this.lanterns);
   }
 
+  // ---------- 缩放(滚轮/双指捏合/双手拉距) ----------
+  setZoom(z) {
+    this.zoom = Math.min(2.6, Math.max(0.45, z));
+    this.maskRoot.scale.setScalar(this.zoom);
+  }
+  getZoom() { return this.zoom ?? 1; }
+
   // ---------- 每帧 ----------
   update(dt, rot) {
     const t = performance.now() / 1000;
-    // 面具旋转: rx/ry 由手势驱动, 自动自转叠加在 ry
+    // 面具旋转: rx/ry 由手势/拖拽驱动, 自动自转叠加在 ry
     this.maskRoot.rotation.order = "ZXY";
     this.maskRoot.rotation.x = rot.rx;
     this.maskRoot.rotation.y = rot.ry;
@@ -298,25 +408,13 @@ export class Stage {
     for (const m of [this.current, this.incoming]) {
       if (!m) continue;
       m.points.material.uniforms.uTime.value = t;
+      for (const gp of m.ghosts ?? []) gp.material.uniforms.uTime.value = t;
     }
-    if (this._fade && this.incoming) {
-      const k = Math.min(1, (performance.now() - this._fade.t0) / this._fade.duration);
-      const e = k * k * (3 - 2 * k);
-      this.incoming.points.material.uniforms.uOpacity.value = e;
-      if (this.current) {
-        this.current.points.material.uniforms.uOpacity.value = 1 - e;
-        // 淡切时位置也轻微插值(缩放差异)
-      }
-      if (k >= 1) {
-        if (this.current) {
-          this.maskRoot.remove(this.current.points);
-          this.current.points.geometry.dispose();
-          this.current.points.material.dispose();
-        }
-        this.current = this.incoming;
-        this.incoming = null;
-        this._fade = null;
-      }
+    // 背景云缓慢漂移
+    for (let i = 0; i < this.bgClouds.length; i++) {
+      const c = this.bgClouds[i];
+      c.rotation.y = t * 0.006 * (i % 2 ? 1 : -1) + i;
+      c.material.uniforms.uTime.value = t;
     }
     // 星云 & 星空 & 灯饰
     this.nebula.material.uniforms.uTime.value = t;

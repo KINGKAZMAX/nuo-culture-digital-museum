@@ -1,0 +1,13 @@
+{
+  "durationSec": 126.92,
+  "fadeSec": 0,
+  "trimmed": false,
+  "title": "归零 - 魔鬼花园 (2026重录版)",
+  "bitrateKbps": 128,
+  "sampleRateHz": 44100,
+  "channels": 2,
+  "files": {
+    "full": "audio/bgm.mp3",
+    "preview": "audio/bgm-preview.mp3"
+  }
+}

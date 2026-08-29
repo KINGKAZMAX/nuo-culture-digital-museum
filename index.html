@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>贵傩戏-傩文化数字博物馆 · Nuo Culture Digital Museum</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🎭</text></svg>" />
-  <!-- 离线字体预加载（href 与 main.js injectFontCss 完全一致，JS 会自动去重） -->
-  <link rel="stylesheet" href="./fonts/ma-shan-zheng/index.css" />
+  <!-- 离线字体预加载（href 与 main.js injectFontCss 完全一致，JS 会自动去重）：
+       草书主标题 + 宋体衬线；其余字体由 JS 在用户切换时按需注入 -->
+  <link rel="stylesheet" href="./fonts/liu-jian-mao-cao/index.css" />
   <link rel="stylesheet" href="./fonts/noto-serif-sc/400.css" />
   <link rel="stylesheet" href="/src/style.css" />
 </head>
@@ -14,53 +15,78 @@
   <!-- 3D 舞台 -->
   <canvas id="stage"></canvas>
 
+  <!-- 顶栏：超大衬线展品编号 + 名称 ｜ 右侧细字导航 -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="exhibit-no">01</span>
+      <span class="topbar-sep" aria-hidden="true">─</span>
+      <span class="exhibit-name">傩面</span>
+    </div>
+    <nav class="topbar-nav">
+      <span class="topbar-link is-static">馆藏</span>
+      <button id="gearBtn" class="topbar-link gear-btn" title="设置">设 置</button>
+    </nav>
+  </header>
+
   <!-- 文案层（可编辑，双击直接改字）— 布局：
-       左：超大竖排金色主标题 + 标题下红色方印章；左下：竖排小字 + 红笔触；右下：竖排英文/中文 + 云纹贴角 -->
+       左下：竖排草书主标题 + 红印章，其下 1px 细线 + 等宽展签；
+       右下：竖排英文 / 1px 细线 / 竖排中文 -->
   <div id="textLayer" class="text-layer">
     <div class="title-block" data-edit="title">
       <h1 id="titleText" class="title-text" spellcheck="false">贵傩戏-傩文化数字博物馆</h1>
       <div class="seal" aria-hidden="true"><span>傩</span></div>
-      <svg class="cloud cloud-a" viewBox="0 0 120 40" fill="none"><path d="M8 30c6-14 20-20 30-14 4-8 18-10 24-2 10-6 24 0 26 10 8 0 16 4 18 10H10c-2-2-2-3-2-4z" stroke="currentColor" stroke-width="1.2" opacity=".8"/></svg>
-      <svg class="cloud cloud-b" viewBox="0 0 120 40" fill="none"><path d="M10 28c8-10 18-14 28-10 6-6 16-6 22 0 10-4 22 2 24 10 6 2 10 6 10 8H14c-3-3-4-6-4-8z" stroke="currentColor" stroke-width="1.2" opacity=".6"/></svg>
     </div>
-    <div class="corner-note" aria-hidden="true">
-      <div class="brush-stroke"></div>
-      <span class="note-zh">驱疫逐祟 · 傩韵千年</span>
+    <div class="exhibit-tag" aria-hidden="true">
+      <div class="tag-rule"></div>
+      <p class="tag-meta">65,536 PTS · REALTIME</p>
     </div>
     <div class="side-block" data-edit="side">
-      <div id="sideEn" class="side-en" spellcheck="false">NUO<br/>MASK</div>
+      <div id="sideEn" class="side-en" spellcheck="false">NUO
+MASK</div>
       <div class="side-rule"></div>
       <div id="sideZh" class="side-zh" spellcheck="false">民俗 · 仪式 · 戏面</div>
-      <svg class="cloud cloud-c" viewBox="0 0 160 56" fill="none"><path d="M12 40c10-18 30-26 46-18 8-12 28-14 38-4 16-8 36 0 40 14 10 2 18 8 20 14H18c-4-2-6-4-6-6z" stroke="currentColor" stroke-width="1.4" opacity=".85"/></svg>
     </div>
   </div>
 
+  <!-- 底栏：居中衬线页码 + 通栏 1px 细线（5 段刻度，红点静态示于第 1 段） -->
+  <footer class="pager" aria-hidden="true">
+    <p class="pager-num">
+      <b>01</b><span class="pager-sep">—</span><span>05</span>
+    </p>
+    <div class="pager-track">
+      <span class="pager-seg is-current"></span>
+      <span class="pager-seg"></span>
+      <span class="pager-seg"></span>
+      <span class="pager-seg"></span>
+      <span class="pager-seg"></span>
+    </div>
+  </footer>
+
   <!-- 手部骨架小视图（手势骨架叠加） -->
-  <div id="handView" class="hand-view">
+  <div id="handView" class="hand-view off">
     <canvas id="handCanvas" width="150" height="150"></canvas>
     <div class="hand-view-label">HAND</div>
   </div>
 
-  <!-- 状态提示 -->
+  <!-- 状态提示（无底色细字） -->
   <div id="hud" class="hud">
     <div id="hudModel" class="hud-item">模型 nuo1 / 5</div>
     <div id="hudGesture" class="hud-item">手势：--</div>
-    <div id="hudTip" class="hud-item hud-tip">捏合切换面具 · 握拳爆散 · 移动手掌旋转 · 双击文字可编辑</div>
+    <div id="hudTip" class="hud-item hud-tip">单击切面具 · 拖拽旋转 · 滚轮缩放 · 摄像头:捏合切换/握拳爆散/双手拉距缩放</div>
   </div>
 
-  <!-- 启动遮罩（博物馆展陈铭牌风：深色 + 金色细框 + 印章） -->
+  <!-- 启动遮罩（分区反转：纸白底黑字铭牌 + 印章红点缀） -->
   <div id="intro" class="intro">
     <div class="intro-inner">
+      <p class="intro-kicker">GUIZHOU NUO · POINT CLOUD ARCHIVE</p>
       <div class="intro-title">贵傩戏-傩文化数字博物馆<span class="intro-seal" aria-hidden="true">傩</span></div>
-      <div class="intro-sub">Nuo Culture Digital Museum · 手势交互点云</div>
-      <button id="startBtn" class="intro-btn">开启摄像头 · 进入</button>
-      <button id="startNoCam" class="intro-btn intro-btn-ghost">暂不用摄像头，仅观赏</button>
+      <p class="intro-sub">Nuo Culture Digital Museum · 手势交互点云</p>
+      <div class="intro-rule" aria-hidden="true"></div>
       <div id="introStatus" class="intro-status">正在准备模型与手势引擎…</div>
     </div>
   </div>
 
-  <!-- 设置面板 -->
-  <button id="gearBtn" class="gear-btn" title="设置">⚙</button>
+  <!-- 设置面板（深色灰阶） -->
   <aside id="panel" class="panel">
     <div class="panel-head">
       <span>设置</span>
@@ -70,12 +96,14 @@
     <section class="panel-sec">
       <h3>手势交互</h3>
       <label class="row"><span>摄像头</span><select id="camSelect"></select></label>
-      <label class="row"><span>启用摄像头</span><input type="checkbox" id="camEnabled" checked /></label>
-      <label class="row"><span>自动旋转 °/s</span><input type="range" id="spinSpeed" min="-60" max="60" step="1" value="21" /><b id="spinSpeedV">21</b></label>
+      <label class="row"><span>启用摄像头</span><input type="checkbox" id="camEnabled" /></label>
+      <label class="row"><span>自动旋转 °/s</span><input type="range" id="spinSpeed" min="-60" max="60" step="1" value="12" /><b id="spinSpeedV">21</b></label>
       <label class="row"><span>旋转灵敏度</span><input type="range" id="rotSens" min="0" max="2" step="0.05" value="1" /><b id="rotSensV">1</b></label>
       <label class="row"><span>平滑时间 s</span><input type="range" id="smooth" min="0" max="3" step="0.1" value="1" /><b id="smoothV">1.0</b></label>
       <label class="row"><span>爆散强度</span><input type="range" id="dispPower" min="0" max="3" step="0.05" value="2" /><b id="dispPowerV">2.0</b></label>
-      <label class="row"><span>粒子大小</span><input type="range" id="pointSize" min="0.5" max="4" step="0.1" value="1.6" /><b id="pointSizeV">1.6</b></label>
+      <label class="row"><span>背景音乐</span><input type="checkbox" id="musicToggle" checked disabled /></label>
+      <label class="row"><span>音量</span><input type="range" id="musicVolume" min="0" max="1" step="0.05" value="0.45" /><b id="musicVolumeV">0.45</b></label>
+      <label class="row"><span>粒子大小</span><input type="range" id="pointSize" min="0.3" max="3" step="0.1" value="1.15" /><b id="pointSizeV">1.0</b></label>
     </section>
 
     <section class="panel-sec">
@@ -85,6 +113,9 @@
       <label class="row"><span>中文副题</span><input type="text" id="cfgSideZh" value="民俗 · 仪式 · 戏面" /></label>
       <label class="row"><span>字体</span>
         <select id="cfgFont">
+          <option value="Liu Jian Mao Cao">刘建军毛草（草书）</option>
+          <option value="Zhi Mang Xing">志莽行书</option>
+          <option value="Long Cang">龙藏行书</option>
           <option value="Ma Shan Zheng">马善政毛笔楷</option>
           <option value="ZCOOL XiaoWei">站酷小薇</option>
           <option value="Noto Serif SC">思源宋体</option>
@@ -92,7 +123,7 @@
         </select>
       </label>
       <label class="row"><span>标题字号</span><input type="range" id="cfgTitleSize" min="60" max="320" step="2" value="220" /><b id="cfgTitleSizeV">120</b></label>
-      <label class="row"><span>金色</span><input type="color" id="cfgColor" value="#d9b06c" /></label>
+      <label class="row"><span>标题颜色</span><input type="color" id="cfgColor" value="#f2f2f2" /></label>
       <label class="row"><span>显示文案</span><input type="checkbox" id="cfgTextVisible" checked /></label>
     </section>
 

@@ -8,18 +8,17 @@ export class ModelStore {
   constructor(manifest) {
     this.defs = [];
     this.listeners = new Set();
-    // 各面具实测姿态: rx 倾角 / scale
-    const TD_POSE = { nuo1: [30, 2.5], nuo2: [0, 2.6], nuo3: [0, 2.6], nuo4: [40, 2.7], nuo5: [35, 2.7] };
-    for (const [name, info] of Object.entries(manifest)) {
-      const [tilt, scale] = TD_POSE[name] ?? [0, 2.6];
+    // 导出资产(.tdp.gz): 位置/姿态/颜色已按最终渲染数据烘焙,恒等变换
+    for (const [name, info] of Object.entries(manifest.models ?? manifest)) {
+      const url = info.url ?? `./models/${name}.tdp.gz`;
       this.defs.push({
         key: name,
         name,
         type: "builtin",
-        url: `./models/${name}.bpc.gz`,
+        url,
         count: info.count,
-        baseScale: scale,
-        baseTilt: tilt,
+        baseScale: 1,
+        baseTilt: 0,
       });
     }
   }

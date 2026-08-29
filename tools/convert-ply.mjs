@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 
-const SRC = "/Users/mekzenx2/Movies/Touchdesigner/Nuo Mask - Gesyure Control/model";
+const SRC = process.env.PLY_SRC || path.resolve(import.meta.dirname, "../models-src"); // PLY 源目录(可用 PLY_SRC 环境变量指定)
 const OUT = path.resolve(import.meta.dirname, "../public/models");
 
 function parseHeader(buf) {
