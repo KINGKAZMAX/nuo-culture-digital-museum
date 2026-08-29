@@ -109,9 +109,23 @@ async function main() {
   await store.init();
   defs = store.defs;
 
-  // 水墨展厅: 全量加载所有面具,弧形同屏陈列
+  // 全量加载所有面具 → 生成入口画廊缩略图 → 弧形同屏陈列
   window.__step = "all-models";
   const geos = await Promise.all(defs.map((d) => ensureGeometry(d).catch(() => null)));
+
+  // 入口画廊:逐件渲染缩略图(临时挂载,不动共享几何缓存)
+  window.__step = "thumbs";
+  const thumbs = [];
+  for (let i = 0; i < defs.length; i++) {
+    if (!geos[i]) { thumbs.push(null); continue; }
+    const tmp = stage._makePoints(geos[i], defs[i], { ghosts: false });
+    stage.maskRoot.add(tmp);
+    stage.composer.render();
+    thumbs.push(document.getElementById("stage").toDataURL("image/jpeg", 0.82));
+    stage.maskRoot.remove(tmp);
+    tmp.material.dispose();
+    for (const gp of tmp.ghosts ?? []) gp.material.dispose();
+  }
   stage.showAllModels(defs, geos);
   stage.focusIndex(0);
   // 异步预编译着色器,消除首次交互的编译卡顿(three 内置 KHR_parallel_shader_compile)
@@ -135,10 +149,55 @@ async function main() {
   introStatus.textContent = "初始化手势引擎…";
   await hand.init((s) => (introStatus.textContent = s));
 
-  // 无进入界面:就绪后加载纱幕自动淡出,直接进展厅
-  // (加载期间纱幕仅显示状态文本,无按钮)
-  $("intro").classList.add("hide");
+  // 入口:黑白画廊展示全部傩面具,点击展品入馆
+  buildIntroGallery(thumbs);
+
+  // ?view=1 直达(展陈/无头截图用),跳过画廊
+  if (new URLSearchParams(location.search).get("view") === "1") {
+    enterHall(0, { welcome: false });
+  }
   $("hudTip").textContent = "五面同屏 · 单击/捏合转台换展品 · 拖拽旋转 · 滚轮缩放 · 握拳爆散 · 双击文字可编辑";
+}
+
+// ---------- 入口画廊 ----------
+function buildIntroGallery(thumbs) {
+  const g = $("introGallery");
+  if (!g) return;
+  g.innerHTML = "";
+  defs.forEach((d, i) => {
+    const card = document.createElement("button");
+    card.className = "mask-card";
+    card.type = "button";
+    const no = document.createElement("span");
+    no.className = "mc-no";
+    no.textContent = String(i + 1).padStart(2, "0");
+    const img = document.createElement("img");
+    img.alt = d.name;
+    img.src = thumbs[i] ?? "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+    const name = document.createElement("span");
+    name.className = "mc-name";
+    name.textContent = d.name;
+    card.append(no, img, name);
+    card.addEventListener("click", () => enterHall(i, { welcome: true }));
+    g.appendChild(card);
+  });
+  g.hidden = false;
+  $("introHint").hidden = false;
+  introStatus.textContent = "馆藏就绪";
+}
+
+function enterHall(idx, { welcome }) {
+  $("intro").classList.add("hide");
+  if (idx !== currentModelIndex) switchTo(idx);
+  // 向导 agent 主动问候(点击即用户手势,音频策略允许播放)
+  if (welcome) {
+    import("./voice/voice.js")
+      .then((m) => m.initVoiceGuide())
+      .then(() => {
+        setTimeout(() => window.__voiceGuide?.play?.("welcome_agent"), 600);
+      })
+      .catch(() => {});
+  }
 }
 
 // 顶栏展品编号/名称 + 底栏页码/刻度联动

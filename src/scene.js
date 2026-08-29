@@ -104,7 +104,7 @@ export class Stage {
     });
     composer.addPass(this.edl);
     // 胶片颗粒(灰度) + 暗角 —— 纸面颗粒与陈纸边缘(浅色主题不用 bloom,会洗白墨色)
-    this.film = new FilmPass(0.2, true);
+    this.film = new FilmPass(0.2, false); // 彩色保留(面具原生色),颗粒为中性噪点
     composer.addPass(this.film);
     this.vignette = new ShaderPass(VignetteShader);
     this.vignette.uniforms.offset.value = 1.1;
@@ -156,7 +156,7 @@ export class Stage {
   // ---------- 面具管理 ----------
   _makePoints(geometry, def, opts = {}) {
     // 水墨展厅: 单层无光晕,墨色着色
-    const mat = makePointsMaterial({ pointSize: this.params.pointSize, ink: opts.ink !== false });
+    const mat = makePointsMaterial({ pointSize: this.params.pointSize, ink: opts.ink === true });
     const points = new THREE.Points(geometry, mat);
     const s = def.baseScale ?? 1;
     points.scale.setScalar(s);
@@ -173,7 +173,7 @@ export class Stage {
       { g: 4, alpha: 0.10 },
     ];
     for (const gh of GHOSTS) {
-      const gm = makePointsMaterial({ pointSize: this.params.pointSize, ghost: gh.g, opacity: gh.alpha, ink: opts.ink !== false });
+      const gm = makePointsMaterial({ pointSize: this.params.pointSize, ghost: gh.g, opacity: gh.alpha, ink: opts.ink === true });
       const gp = new THREE.Points(geometry, gm);
       gp.scale.setScalar(s);
       gp.userData.baseOpacity = gh.alpha;
@@ -199,7 +199,7 @@ export class Stage {
     defs.forEach((def, i) => {
       const geometry = geos[i];
       if (!geometry) return;
-      const p = this._makePoints(geometry, def, { ghosts: false, ink: true });
+      const p = this._makePoints(geometry, def, { ghosts: false }); // 原生彩色
       // 垂直居中(TDPC 烘焙坐标原点在底部)
       geometry.computeBoundingBox();
       const bb = geometry.boundingBox;
