@@ -9,16 +9,16 @@ import { loadBPC } from "./pointCloud.js";
 const $ = (id) => document.getElementById(id);
 
 // ---------- 持久化配置 ----------
-const LS_KEY = "nuo-mask-cfg-v2";
+const LS_KEY = "nuo-mask-cfg-v3";
 const defaultCfg = {
   title: "贵傩戏-傩文化数字博物馆",
   sideEn: "NUO CULTURE DIGITAL MUSEUM",
   sideZh: "民俗 · 仪式 · 戏面",
   font: "Liu Jian Mao Cao",
-  titleSize: 220,
-  color: "#f2f2f2",
+  titleSize: 176,
+  color: "#141414",
   textVisible: true,
-  spinSpeed: 12,
+  spinSpeed: 6,
   rotSens: 1,
   smooth: 1,
   dispPower: 2,
@@ -60,12 +60,11 @@ function applyCfg() {
   title.textContent = cfg.title;
   title.style.fontFamily = `'${cfg.font}', 'Liu Jian Mao Cao', 'Kaiti SC', 'STKaiti', serif`;
   title.style.fontSize = `calc(${cfg.titleSize} / 12.5 * 1vmin)`;
-  const gold = cfg.color;
-  title.style.color = gold;
-  title.style.textShadow = `0 0 2.2vmin ${hexA(gold, .45)}, 0 0 6vmin ${hexA(gold, .18)}`;
+  title.style.color = cfg.color;
+  title.style.textShadow = "none"; // 宣纸底不用辉光
   document.querySelector(".side-en").textContent = cfg.sideEn.replace(/\s+/g, "\n");
   document.querySelector(".side-zh").textContent = cfg.sideZh;
-  document.documentElement.style.setProperty("--gold", gold);
+  document.documentElement.style.setProperty("--gold", cfg.color);
   $("textLayer").classList.toggle("hidden", !cfg.textVisible);
   injectFontCss(cfg.font);
 }
@@ -110,19 +109,13 @@ async function main() {
   await store.init();
   defs = store.defs;
 
-  // 背景粒子云(存在才加载,缺失则用现有星空近似)
-  stage.loadBackground(manifest).catch((e) => console.warn("背景云不可用", e));
-
-  // 首个模型
-  window.__step = "first-model:" + defs[0].key;
-  await ensureGeometry(defs[0]);
-  stage.showModel(defs[0], geoCache.get(defs[0].key));
-  $("hudModel").textContent = `模型 ${defs[0].name} / ${defs.length}`;
+  // 水墨展厅: 全量加载所有面具,弧形同屏陈列
+  window.__step = "all-models";
+  const geos = await Promise.all(defs.map((d) => ensureGeometry(d).catch(() => null)));
+  stage.showAllModels(defs, geos);
+  stage.focusIndex(0);
   // 异步预编译着色器,消除首次交互的编译卡顿(three 内置 KHR_parallel_shader_compile)
   stage.renderer.compileAsync(stage.scene, stage.camera).catch(() => {});
-
-  // 预载下一个模型
-  ensureGeometry(defs[1 % defs.length]).catch(() => {});
 
   // 手势
   hand = new HandControl({
@@ -137,6 +130,7 @@ async function main() {
 
   bindUI();
   bindEditableText();
+  updateExhibitUI(0);
 
   introStatus.textContent = "初始化手势引擎…";
   await hand.init((s) => (introStatus.textContent = s));
@@ -144,7 +138,26 @@ async function main() {
   // 无进入界面:就绪后加载纱幕自动淡出,直接进展厅
   // (加载期间纱幕仅显示状态文本,无按钮)
   $("intro").classList.add("hide");
-  $("hudTip").textContent = "单击切面具 · 拖拽旋转 · 滚轮缩放 · 摄像头手势:捏合切换/握拳爆散/双手拉距缩放 · 双击文字可编辑";
+  $("hudTip").textContent = "五面同屏 · 单击/捏合转台换展品 · 拖拽旋转 · 滚轮缩放 · 握拳爆散 · 双击文字可编辑";
+}
+
+// 顶栏展品编号/名称 + 底栏页码/刻度联动
+function updateExhibitUI(idx) {
+  const def = defs[idx];
+  if (!def) return;
+  const no = String(idx + 1).padStart(2, "0");
+  const noEl = document.querySelector(".exhibit-no");
+  const nameEl = document.querySelector(".exhibit-name");
+  if (noEl) noEl.textContent = no;
+  if (nameEl) nameEl.textContent = def.name;
+  const b = document.querySelector(".pager-num b");
+  const total = document.querySelectorAll(".pager-num span")[1];
+  if (b) b.textContent = no;
+  if (total) total.textContent = String(defs.length).padStart(2, "0");
+  document.querySelectorAll(".pager-seg").forEach((seg, i) => {
+    seg.classList.toggle("is-current", i === idx);
+  });
+  $("hudModel").textContent = `展品 ${def.name} · ${idx + 1} / ${defs.length}`;
 }
 
 async function ensureGeometry(def) {
@@ -168,13 +181,18 @@ async function ensureGeometry(def) {
 
 async function switchTo(idx) {
   idx = ((idx % defs.length) + defs.length) % defs.length;
-  if (idx === currentModelIndex && stage.current) return;
+  if (idx === currentModelIndex && stage.models?.length) return;
   currentModelIndex = idx;
-  const def = defs[idx];
-  $("hudModel").textContent = `模型 ${def.name} / ${defs.length}`;
-  await stage.transitionTo(ensureGeometry, defs, idx, 1000);
-  // 预载邻近
-  ensureGeometry(defs[(idx + 1) % defs.length]).catch(() => {});
+  stage.focusIndex(idx);
+  updateExhibitUI(idx);
+}
+
+// 馆藏变化(上传/删除)后重建弧形陈列
+function rebuildGallery() {
+  const geos = defs.map((d) => geoCache.get(d.key) ?? null);
+  stage.showAllModels(defs, geos);
+  stage.focusIndex(currentModelIndex);
+  renderModelList();
 }
 
 // ---------- 手部骨架小视图 ----------
@@ -233,9 +251,9 @@ function tick() {
       }
     }
   }
-  // 拖拽惯性衰减
-  userRot.vx *= Math.exp(-dt * 3.2);
-  userRot.vy *= Math.exp(-dt * 3.2);
+  // 拖拽惯性衰减(较快收敛,避免点击后长时间快转)
+  userRot.vx *= Math.exp(-dt * 5.0);
+  userRot.vy *= Math.exp(-dt * 5.0);
   userRot.ry += userRot.vx * dt;
   userRot.rx += userRot.vy * dt;
   userRot.rx = Math.max(-1.1, Math.min(1.1, userRot.rx));
@@ -304,8 +322,11 @@ const THREE_D2R = Math.PI / 180;
     p.x = e.clientX; p.y = e.clientY;
     if (pointers.size === 1 && dragging) {
       moved += Math.abs(dx) + Math.abs(dy);
-      userRot.vx += dx * 14;
-      userRot.vy += dy * 11;
+      userRot.vx += dx * 7;
+      userRot.vy += dy * 5;
+      // 限位: 点击/快速甩动也不会导致高速旋转
+      userRot.vx = Math.max(-2.2, Math.min(2.2, userRot.vx));
+      userRot.vy = Math.max(-1.6, Math.min(1.6, userRot.vy));
     } else if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -440,11 +461,7 @@ function bindUI() {
   bind("dispPower", "dispPower", 2, (v) => { stage.params.dispPower = v; });
   bind("pointSize", "pointSize", 2, (v) => {
     stage.params.pointSize = v;
-    for (const m of [stage.current, stage.incoming]) {
-      if (!m) continue;
-      m.points.material.uniforms.uPointSize.value = v;
-      for (const gp of m.ghosts ?? []) gp.material.uniforms.uPointSize.value = v;
-    }
+    stage.setPointSizeAll(v);
   });
   $("musicToggle").addEventListener("change", (e) => {
     cfg.music = e.target.checked;
@@ -488,8 +505,8 @@ function bindUI() {
         defs = store.defs;
         // 缓存已有几何,直接可用
         geoCache.set(def.key, geo);
-        $("hudModel").textContent = `已添加 ${def.name}（捏合切换到它）`;
-        renderModelList();
+        rebuildGallery();
+        $("hudModel").textContent = `已入馆 ${def.name}`;
       } catch (err) {
         alert("模型导入失败: " + err.message);
       }
@@ -531,9 +548,8 @@ function renderModelList() {
         await store.removeUserModel(d.key);
         defs = store.defs;
         if (currentModelIndex >= defs.length) currentModelIndex = 0;
-        await switchTo(currentModelIndex);
-        renderModelList();
-        $("hudModel").textContent = `模型 ${defs[currentModelIndex]?.name ?? "--"} / ${defs.length}`;
+        rebuildGallery();
+        switchTo(currentModelIndex);
       };
       li.append(del);
     }

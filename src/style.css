@@ -1,6 +1,6 @@
 /* ============================================================
-   傩文化数字博物馆 · 黑白高级博物馆 UI
-   体系：展厅底 #0A0A0A · 纸白 #F4F1EA · 墨阶 ink-100/70/45/25
+   傩文化数字博物馆 · 纸墨展厅 UI
+   体系：展厅底 #F4F1EA(宣纸) · 墨阶 ink-100/70/45/25(深→浅)
    全站唯一彩色：印章红 #A31621（hover #C02030），每屏 ≤2 处
    结构语言：1px 细线 + 留白，无卡片底色块 / 无边框盒子 / 无虚线
    约定：#titleText / .side-en / .side-zh 的 font-size、color、
@@ -9,21 +9,21 @@
    ============================================================ */
 
 :root {
-  --bg-black: #0A0A0A;            /* 展厅底 */
-  --bg-paper: #F4F1EA;            /* 纸白（intro 分区反转用） */
-  --ink-100: #E8E5DE;             /* 主文字 */
-  --ink-70: #A6A399;              /* 次级文字 */
-  --ink-45: #6E6C64;              /* 弱文字 / 刻度 */
-  --ink-25: #3D3C37;              /* 分隔线 */
+  --bg-paper: #F4F1EA;            /* 展厅底(宣纸) */
+  --bg-ink: #16150F;              /* 深墨(按钮/强调底) */
+  --ink-100: #16150F;             /* 主文字(浓墨) */
+  --ink-70: #57554B;              /* 次级文字 */
+  --ink-45: #8B887B;              /* 弱文字 / 刻度 */
+  --ink-25: rgba(22, 21, 15, .16);/* 分隔线 */
   --seal-red: #A31621;            /* 全站唯一彩色 */
   --seal-red-hover: #C02030;
-  --gold: #f2f2f2;                /* 兼容位：main.js 以 cfg.color 覆盖（默认白系） */
+  --gold: #141414;                /* 兼容位：main.js 以 cfg.color 覆盖（默认墨色） */
   --font-cursive: "Liu Jian Mao Cao", "Kaiti SC", "STKaiti", "KaiTi", serif;
   --font-serif: "Noto Serif SC", Georgia, "Times New Roman", "Songti SC", serif;
   --font-num: Georgia, "Times New Roman", "Noto Serif SC", serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --ease: cubic-bezier(.2, .8, .2, 1);
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -31,7 +31,7 @@
 html, body {
   width: 100%; height: 100%;
   overflow: hidden;
-  background: var(--bg-black);
+  background: var(--bg-paper);
   font-family: var(--font-serif);
   color: var(--ink-100);
 }
@@ -218,7 +218,7 @@ html, body {
 [contenteditable="true"]:hover { opacity: .8; }
 [contenteditable="true"]:focus {
   opacity: 1;
-  box-shadow: 0 0 0 1px rgba(232, 229, 222, .35);
+  box-shadow: 0 0 0 1px rgba(22, 21, 15, .3);
   border-radius: 2px;
   padding: 2px 6px;
   margin: -2px -6px;
@@ -273,7 +273,7 @@ html, body {
   width: 150px; height: 150px;
   z-index: 10;
   overflow: hidden;
-  background: rgba(10, 10, 10, .5);
+  background: rgba(22, 21, 15, .5);
   border: 1px solid var(--ink-25);
   transition: opacity .3s var(--ease), transform .3s var(--ease);
 }
@@ -309,14 +309,15 @@ html, body {
 .hud-tip { display: none; color: var(--ink-45); }
 @media (min-width: 900px) { .hud-tip { display: block; } }
 
-/* ---------- 启动遮罩：分区反转（纸白底黑字铭牌） ---------- */
+/* ---------- 启动遮罩：暗色黑白 + 全面具画廊 ---------- */
 .intro {
   position: fixed; inset: 0;
   z-index: 100;
   display: flex; align-items: center; justify-content: center;
-  background: var(--bg-paper);
-  color: var(--bg-black);
+  background: var(--bg-black);
+  color: var(--ink-100);
   transition: opacity .7s var(--ease);
+  overflow-y: auto;
 }
 .intro.hide { opacity: 0; pointer-events: none; }
 
@@ -331,14 +332,14 @@ html, body {
   font-size: min(1.2vmin, 11px);
   line-height: 1.6;
   letter-spacing: .42vmin;
-  color: rgba(10, 10, 10, .48);
+  color: rgba(232, 229, 222, .45);
   margin-bottom: 3.2vmin;
 }
 .intro-title {
   font-family: var(--font-cursive);       /* 书法体仅用于大标题 */
   font-size: min(10.5vmin, 8vw);          /* 7 字标题自适应宽度 */
   line-height: 1.6;
-  color: var(--bg-black);
+  color: var(--bg-ink);
   letter-spacing: min(1.2vmin, .9vw);
   margin-bottom: 1.8vmin;
   white-space: nowrap;
@@ -362,14 +363,14 @@ html, body {
   font-size: min(1.85vmin, 13px);
   line-height: 1.6;
   letter-spacing: .55vmin;
-  color: rgba(10, 10, 10, .55);
+  color: rgba(22, 21, 15, .55);
   margin-bottom: 4.2vmin;
   white-space: nowrap;
 }
 .intro-rule {                             /* 铭牌横向细线 */
   width: 100%;
   height: 1px;
-  background: rgba(10, 10, 10, .22);
+  background: rgba(22, 21, 15, .22);
   margin: 0 auto 4.2vmin;
 }
 .intro-btn {
@@ -382,8 +383,8 @@ html, body {
   font-family: var(--font-serif);
   letter-spacing: .4vmin;
   color: var(--bg-paper);
-  background: var(--bg-black);
-  border: 1px solid var(--bg-black);
+  background: var(--bg-paper);
+  border: 1px solid var(--bg-ink);
   border-radius: 2px;
   cursor: pointer;
   transition: background .24s var(--ease), border-color .24s var(--ease), color .24s var(--ease);
@@ -395,8 +396,8 @@ html, body {
 .intro-btn:active { transform: translateY(1px); }
 .intro-btn-ghost {
   background: transparent;
-  color: var(--bg-black);
-  border: 1px solid rgba(10, 10, 10, .32);
+  color: var(--bg-ink);
+  border: 1px solid rgba(22, 21, 15, .32);
 }
 .intro-btn-ghost:hover {
   background: transparent;
@@ -409,7 +410,7 @@ html, body {
   font-size: min(1.45vmin, 12px);
   line-height: 1.6;
   letter-spacing: .2vmin;
-  color: rgba(10, 10, 10, .5);
+  color: rgba(22, 21, 15, .5);
 }
 .intro-status::before {
   content: ""; display: inline-block;
@@ -427,9 +428,9 @@ html, body {
   width: 344px; max-width: 92vw;
   height: 100%;
   z-index: 50;
-  background: rgba(10, 10, 10, .96);
+  background: rgba(244, 241, 234, .98);
   border-left: 1px solid var(--ink-25);
-  box-shadow: -18px 0 50px rgba(0, 0, 0, .55);
+  box-shadow: -18px 0 50px rgba(22, 21, 15, .18);
   backdrop-filter: blur(10px);
   transform: translateX(105%);
   transition: transform .32s var(--ease);
@@ -448,7 +449,7 @@ html, body {
   padding: 16px 0 12px;
   font-size: 14px; letter-spacing: 6px;
   color: var(--ink-100);
-  background: rgba(10, 10, 10, .97);
+  background: rgba(244, 241, 234, .98);
   border-bottom: 1px solid var(--ink-25);
   z-index: 1;
 }
@@ -479,7 +480,7 @@ html, body {
 .row > span { flex: 0 0 88px; color: var(--ink-70); }
 .row input[type="text"], .row select {
   flex: 1; min-width: 0;
-  background: rgba(0, 0, 0, .4);
+  background: rgba(22, 21, 15, .05);
   border: 1px solid var(--ink-25);
   color: var(--ink-100);
   border-radius: 2px;
@@ -557,7 +558,7 @@ html, body {
 .model-list button:hover { color: var(--ink-100); }
 
 /* ---------- 细节 ---------- */
-::selection { background: rgba(232, 229, 222, .28); color: var(--ink-100); }
+::selection { background: rgba(22, 21, 15, .16); color: var(--ink-100); }
 button:focus-visible, select:focus-visible { outline: 1px solid var(--ink-45); outline-offset: 2px; }
 
 /* ---------- 小屏适配 ---------- */
@@ -565,6 +566,62 @@ button:focus-visible, select:focus-visible { outline: 1px solid var(--ink-45); o
   .side-block { bottom: 20vmin; }          /* 避让右下角 voice 模块内联定位按钮 */
   .exhibit-no { font-size: 7vmin; }
   .topbar-nav { gap: 2.6vmin; }
+}
+
+/* 全面具画廊(入口) */
+.intro-gallery {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2.2vmin;
+  margin: 4vmin auto 0;
+  max-width: min(88vw, 1080px);
+}
+@media (max-width: 720px) {
+  .intro-gallery { grid-template-columns: repeat(2, 1fr); }
+}
+.mask-card {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: center;
+  transition: transform .25s var(--ease);
+}
+.mask-card:hover { transform: translateY(-4px); }
+.mask-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 2px;
+  filter: contrast(1.04);
+  box-shadow: 0 0 0 1px rgba(61, 60, 55, .9);
+  transition: box-shadow .25s var(--ease);
+}
+.mask-card:hover img { box-shadow: 0 0 0 1px rgba(232, 229, 222, .55); }
+.mask-card .mc-no {
+  font-family: var(--font-num);
+  font-size: min(1.6vmin, 12px);
+  color: var(--ink-45);
+  display: block;
+  margin-top: 1.2vmin;
+  letter-spacing: .18em;
+}
+.mask-card .mc-name {
+  font-family: var(--font-cursive);        /* 面具名:草书 */
+  font-size: min(3.2vmin, 22px);
+  color: var(--ink-100);
+  display: block;
+  margin-top: .4vmin;
+  line-height: 1.3;
+}
+.intro-hint {
+  font-family: var(--font-serif);
+  font-size: min(1.7vmin, 13px);
+  color: var(--ink-45);
+  letter-spacing: .32em;
+  margin-top: 3.4vmin;
 }
 
 @media (prefers-reduced-motion: reduce) {

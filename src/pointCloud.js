@@ -143,6 +143,7 @@ void main() {
 const FRAG = /* glsl */ `
 precision highp float;
 uniform float uOpacity;
+uniform float uInk;       // 1=水墨单色模式(宣纸底用)
 varying vec3 vColor;
 
 void main() {
@@ -157,7 +158,14 @@ void main() {
   float diff = max(0.0, dot(n, vl1)) * 0.995 + max(0.0, dot(n, vl2)) * 2.0;
   float shade = 0.58 + diff * 0.88;
   float edge = smoothstep(0.25, 0.16, r2);
-  gl_FragColor = vec4(vColor * shade, edge * uOpacity);
+  vec3 base = vColor;
+  if (uInk > 0.5) {
+    // 水墨:亮度映射到淡墨(亮部)~浓墨(暗部),暖灰阶避免冷蓝
+    float lum = dot(vColor, vec3(0.299, 0.587, 0.114));
+    float inkv = mix(0.20, 0.58, lum);
+    base = vec3(inkv) * vec3(1.04, 1.0, 0.92);
+  }
+  gl_FragColor = vec4(base * shade, edge * uOpacity);
 }
 `;
 
@@ -170,6 +178,7 @@ export function makePointsMaterial(opts = {}) {
       uPointSize: { value: opts.pointSize ?? 1 },
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       uOpacity: { value: opts.opacity ?? 1 },
+      uInk: { value: opts.ink ? 1 : 0 },
       uViewH: { value: window.innerHeight * Math.min(window.devicePixelRatio, 2) },
       uTanHalfFov: { value: Math.tan(((opts.fov ?? 45) / 2) * Math.PI / 180) },
     },
