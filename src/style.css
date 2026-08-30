@@ -1,26 +1,27 @@
 /* ============================================================
-   傩文化数字博物馆 · 纸墨展厅 UI
-   体系：展厅底 #F4F1EA(宣纸) · 墨阶 ink-100/70/45/25(深→浅)
-   全站唯一彩色：印章红 #A31621（hover #C02030），每屏 ≤2 处
-   结构语言：1px 细线 + 留白，无卡片底色块 / 无边框盒子 / 无虚线
+   贵傩戏 GUI NUO OPERA · 傩文化数字博物馆 · 纯白展厅 UI
+   体系：展厅底 #FFFFFF(纯白) · 灰阶 ink-100/70/45/25(深→浅)
+   全站唯一彩色：印章红 #A31621（对白 7.79:1，每屏 ≤2 处）
+   字体：无衬线体系（系统黑体栈），书法体仅保留印章「傩」一处
+   结构语言：1px 细线 + 留白，无卡片底色块 / 无虚线
    约定：#titleText / .side-en / .side-zh 的 font-size、color、
    text-shadow、font-family 会被 main.js 内联覆盖，这里只控
    字距 / 布局 / 层级。
    ============================================================ */
 
 :root {
-  --bg-paper: #F4F1EA;            /* 展厅底(宣纸) */
-  --bg-ink: #16150F;              /* 深墨(按钮/强调底) */
-  --ink-100: #16150F;             /* 主文字(浓墨) */
-  --ink-70: #57554B;              /* 次级文字 */
-  --ink-45: #8B887B;              /* 弱文字 / 刻度 */
-  --ink-25: rgba(22, 21, 15, .16);/* 分隔线 */
+  --bg-paper: #FFFFFF;            /* 展厅底(纯白) */
+  --bg-ink: #1A1A1A;              /* 深墨(按钮/强调底) */
+  --ink-100: #1A1A1A;             /* 主文字 */
+  --ink-70: #595959;              /* 次级文字 */
+  --ink-45: #8A8A8A;              /* 弱文字 / 刻度(仅大号说明) */
+  --ink-25: rgba(0, 0, 0, .08);   /* 分隔线 */
   --seal-red: #A31621;            /* 全站唯一彩色 */
   --seal-red-hover: #C02030;
-  --gold: #141414;                /* 兼容位：main.js 以 cfg.color 覆盖（默认墨色） */
-  --font-cursive: "Long Cang", "Liu Jian Mao Cao", "Kaiti SC", "STKaiti", "KaiTi", serif;
-  --font-serif: "Noto Serif SC", Georgia, "Times New Roman", "Songti SC", serif;
-  --font-num: Georgia, "Times New Roman", "Noto Serif SC", serif;
+  --gold: #1A1A1A;                /* 兼容位：main.js 以 cfg.color 覆盖（默认墨色） */
+  --font-sans: "Helvetica Neue", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Source Han Sans SC", Arial, sans-serif;
+  --font-cursive: "Kaiti SC", "STKaiti", "KaiTi", serif;  /* 仅印章「傩」 */
+  --font-num: "Helvetica Neue", Helvetica, Arial, "PingFang SC", sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --ease: cubic-bezier(.2, .8, .2, 1);
   color-scheme: light;
@@ -28,11 +29,17 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* AR 试戴全屏态(main.js 切换 body.ar-open): 隐藏展馆 UI, 只留 AR 层 */
+body.ar-open .topbar,
+body.ar-open .hud,
+body.ar-open .pager,
+body.ar-open .text-layer { display: none; }
+
 html, body {
   width: 100%; height: 100%;
   overflow: hidden;
   background: var(--bg-paper);
-  font-family: var(--font-serif);
+  font-family: var(--font-sans);
   color: var(--ink-100);
 }
 
@@ -67,11 +74,19 @@ html, body {
   letter-spacing: .3vmin;
 }
 .exhibit-name {
-  font-family: var(--font-cursive);   /* 展品名:草书 */
-  font-size: 2.6vmin;
+  font-family: var(--font-sans);     /* 展品名:黑体 */
+  font-weight: 500;
+  font-size: 2.4vmin;
   line-height: 1.6;
-  letter-spacing: .9vmin;          /* 中文宽字距 */
+  letter-spacing: .55vmin;
   color: var(--ink-100);
+}
+.exhibit-en {                       /* 展品英文名:小号大写辅助行 */
+  font-family: var(--font-num);
+  font-size: 1.15vmin;
+  letter-spacing: .3vmin;
+  text-transform: uppercase;
+  color: var(--ink-45);
 }
 .topbar-nav {
   display: flex;
@@ -80,7 +95,7 @@ html, body {
   padding-top: 1.2vmin;
 }
 .topbar-link {
-  font-family: var(--font-serif);
+  font-family: var(--font-sans);
   font-size: 1.7vmin;
   line-height: 1.6;
   letter-spacing: .5vmin;
@@ -94,6 +109,16 @@ html, body {
 .topbar-link.is-static {           /* 馆藏：纯展陈文字，无交互 */
   color: var(--ink-45);
   cursor: default;
+}
+.topbar-en {                        /* 导航英文辅助行 */
+  font-family: var(--font-num);
+  font-size: .95vmin;
+  letter-spacing: .28vmin;
+  text-transform: uppercase;
+  color: var(--ink-45);
+  display: block;
+  line-height: 1.1;
+  text-align: right;
 }
 #gearBtn { pointer-events: auto; }
 #gearBtn:hover {
@@ -129,7 +154,7 @@ html, body {
   position: relative;
   writing-mode: vertical-rl;
   text-orientation: upright;
-  font-family: var(--font-cursive);        /* 占位：main.js 以 cfg.font 内联覆盖 */
+  font-family: var(--font-sans);           /* 占位：main.js 以 cfg.font 内联覆盖 */
   font-size: 9.6vmin;                      /* 占位值：main.js 以 calc(titleSize/12.5*1vmin) 内联覆盖 */
   line-height: 1.14;                       /* 竖排列宽（列的厚度） */
   letter-spacing: .1em;                    /* CSS 只控字距 */
@@ -151,7 +176,7 @@ html, body {
   content: "";
   position: absolute;
   inset: .5vmin;
-  border: 1px solid rgba(244, 241, 234, .5);
+  border: 1px solid rgba(255, 255, 255, .55);
   border-radius: .3vmin;
   pointer-events: none;
 }
@@ -185,14 +210,14 @@ html, body {
 /* 右下：竖排英文 / 1px 细线 / 竖排中文 */
 .side-block {
   position: absolute;
-  right: 4vmin; bottom: 11vmin;
+  right: 4vmin; bottom: 21vmin; /* 抬高避让右下 AR 试戴按钮(bottom 80px+44px) */
   display: flex; flex-direction: row-reverse;   /* 英文贴最右缘 */
   align-items: center; gap: 1.7vmin;
 }
 .side-en {                               /* 英文：小 1 级 + 字距 ×2 + 灰阶降档 */
   writing-mode: vertical-rl;
   text-orientation: mixed;                /* 拉丁字母侧转，如原版竖排英文 */
-  font-family: var(--font-serif);
+  font-family: var(--font-num);
   font-size: 1.55vmin;
   letter-spacing: .5vmin;
   line-height: 1.9;                       /* 多列（NUO/CULTURE/…）列距 */
@@ -207,7 +232,7 @@ html, body {
 .side-zh {
   writing-mode: vertical-rl;
   text-orientation: upright;
-  font-family: var(--font-serif);
+  font-family: var(--font-sans);
   font-size: 1.9vmin;
   letter-spacing: .8vmin;
   line-height: 1;
@@ -229,7 +254,7 @@ html, body {
   position: fixed;
   left: 0; right: 0; bottom: 0;
   z-index: 20;
-  padding: 0 4vmin 2.2vmin;
+  padding: 0 4vmin calc(2.2vmin + env(safe-area-inset-bottom));
   pointer-events: none;
 }
 .pager-num {
@@ -269,12 +294,14 @@ html, body {
 /* ---------- 手部小视图 ---------- */
 .hand-view {
   position: fixed;
-  left: 14px; bottom: 14px;
+  left: 14px;
+  bottom: calc(14px + env(safe-area-inset-bottom));
   width: 150px; height: 150px;
   z-index: 10;
   overflow: hidden;
-  background: rgba(22, 21, 15, .5);
+  background: rgba(26, 26, 26, .78);
   border: 1px solid var(--ink-25);
+  border-radius: 8px;
   transition: opacity .3s var(--ease), transform .3s var(--ease);
 }
 .hand-view.off { opacity: 0; transform: translateY(10px); pointer-events: none; }
@@ -314,7 +341,7 @@ html, body {
   position: fixed; inset: 0;
   z-index: 100;
   display: flex; align-items: center; justify-content: center;
-  background: var(--bg-black);
+  background: var(--bg-paper);
   color: var(--ink-100);
   transition: opacity .7s var(--ease);
   overflow-y: auto;
@@ -332,25 +359,26 @@ html, body {
   font-size: min(1.2vmin, 11px);
   line-height: 1.6;
   letter-spacing: .42vmin;
-  color: rgba(232, 229, 222, .45);
+  color: var(--ink-45);
   margin-bottom: 3.2vmin;
 }
 .intro-title {
-  font-family: var(--font-cursive);       /* 书法体仅用于大标题 */
-  font-size: min(10.5vmin, 8vw);          /* 7 字标题自适应宽度 */
-  line-height: 1.6;
-  color: var(--bg-ink);
-  letter-spacing: min(1.2vmin, .9vw);
+  font-family: var(--font-sans);          /* 无衬线大标题 */
+  font-weight: 600;
+  font-size: min(6.4vmin, 5.2vw);         /* 白底黑体收敛字号 */
+  line-height: 1.35;
+  color: var(--ink-100);
+  letter-spacing: min(.8vmin, .6vw);
   margin-bottom: 1.8vmin;
   white-space: nowrap;
 }
-.intro-seal {                             /* 书法旁的小印章 */
+.intro-seal {                             /* 标题旁的小印章 */
   display: inline-block;
   width: 4.4vmin; height: 4.4vmin;
   margin-left: 1.6vmin;
-  position: relative; top: -4.2vmin;
+  position: relative; top: -2.6vmin;
   background: var(--seal-red);
-  color: var(--bg-paper);
+  color: #fff;
   font-family: var(--font-cursive);
   font-size: 2.9vmin; line-height: 4.4vmin; text-align: center;
   letter-spacing: 0;
@@ -359,13 +387,13 @@ html, body {
   vertical-align: baseline;
 }
 .intro-sub {                              /* 英文副题：小 1 级 + 字距 ×2 + 灰阶降档 */
-  font-family: var(--font-serif);
+  font-family: var(--font-num);
   font-size: min(1.85vmin, 13px);
   line-height: 1.6;
   letter-spacing: .55vmin;
   color: rgba(22, 21, 15, .55);
   margin-bottom: 4.2vmin;
-  white-space: nowrap;
+  white-space: normal;
 }
 .intro-rule {                             /* 铭牌横向细线 */
   width: 100%;
@@ -380,10 +408,10 @@ html, body {
   padding: 1.5vmin 4.4vmin;
   font-size: min(1.95vmin, 14px);
   line-height: 1.6;
-  font-family: var(--font-serif);
+  font-family: var(--font-sans);
   letter-spacing: .4vmin;
-  color: var(--bg-paper);
-  background: var(--bg-paper);
+  color: #fff;
+  background: var(--bg-ink);
   border: 1px solid var(--bg-ink);
   border-radius: 2px;
   cursor: pointer;
@@ -396,7 +424,7 @@ html, body {
 .intro-btn:active { transform: translateY(1px); }
 .intro-btn-ghost {
   background: transparent;
-  color: var(--bg-ink);
+  color: var(--ink-100);
   border: 1px solid rgba(22, 21, 15, .32);
 }
 .intro-btn-ghost:hover {
@@ -428,7 +456,7 @@ html, body {
   width: 344px; max-width: 92vw;
   height: 100%;
   z-index: 50;
-  background: rgba(244, 241, 234, .98);
+  background: rgba(255, 255, 255, .98);
   border-left: 1px solid var(--ink-25);
   box-shadow: -18px 0 50px rgba(22, 21, 15, .18);
   backdrop-filter: blur(10px);
@@ -447,10 +475,11 @@ html, body {
   position: sticky; top: 0;
   display: flex; justify-content: space-between; align-items: center;
   padding: 16px 0 12px;
-  font-family: var(--font-cursive);   /* 标题:草书 */
-  font-size: 17px; letter-spacing: 6px;
+  font-family: var(--font-sans);      /* 面板标题:黑体 */
+  font-weight: 600;
+  font-size: 15px; letter-spacing: 4px;
   color: var(--ink-100);
-  background: rgba(244, 241, 234, .98);
+  background: rgba(255, 255, 255, .98);
   border-bottom: 1px solid var(--ink-25);
   z-index: 1;
 }
@@ -464,8 +493,8 @@ html, body {
 
 .panel-sec { margin-top: 22px; }
 .panel-sec h3 {
-  font-family: var(--font-cursive);   /* 区块标题:草书 */
-  font-size: 14px; font-weight: 400;
+  font-family: var(--font-sans);      /* 区块标题:黑体 */
+  font-size: 12px; font-weight: 600;
   letter-spacing: 3px;
   color: var(--ink-70);
   margin-bottom: 12px;
@@ -596,30 +625,40 @@ button:focus-visible, select:focus-visible { outline: 1px solid var(--ink-45); o
   width: 100%;
   aspect-ratio: 1;
   object-fit: cover;
-  border-radius: 2px;
-  filter: contrast(1.04);
-  box-shadow: 0 0 0 1px rgba(61, 60, 55, .9);
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px var(--ink-25), 0 6px 16px rgba(0, 0, 0, .06);
   transition: box-shadow .25s var(--ease);
 }
-.mask-card:hover img { box-shadow: 0 0 0 1px rgba(232, 229, 222, .55); }
+.mask-card:hover img { box-shadow: 0 0 0 1px rgba(0, 0, 0, .4), 0 10px 22px rgba(0, 0, 0, .1); }
 .mask-card .mc-no {
   font-family: var(--font-num);
   font-size: min(1.6vmin, 12px);
   color: var(--ink-45);
   display: block;
-  margin-top: 1.2vmin;
+  margin-top: 1.6vmin;
   letter-spacing: .18em;
 }
 .mask-card .mc-name {
-  font-family: var(--font-cursive);        /* 面具名:草书 */
-  font-size: min(3.2vmin, 22px);
+  font-family: var(--font-sans);           /* 面具名:黑体 */
+  font-weight: 500;
+  font-size: min(2.6vmin, 18px);
   color: var(--ink-100);
   display: block;
-  margin-top: .4vmin;
+  margin-top: .8vmin;
+  line-height: 1.35;
+}
+.mask-card .mc-en {
+  font-family: var(--font-num);
+  font-size: min(1.25vmin, 10px);
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--ink-45);
+  display: block;
+  margin-top: .5vmin;
   line-height: 1.3;
 }
 .intro-hint {
-  font-family: var(--font-serif);
+  font-family: var(--font-sans);
   font-size: min(1.7vmin, 13px);
   color: var(--ink-45);
   letter-spacing: .32em;
@@ -638,21 +677,89 @@ button:focus-visible, select:focus-visible { outline: 1px solid var(--ink-45); o
   .title-block { left: 10px; top: 84px; }
   .title-text { font-size: 6.4vmin !important; letter-spacing: .06em; }
   .seal { width: 34px; height: 34px; font-size: 19px; }
-  .side-block { right: 10px; bottom: 86px; }
+  .side-block { right: 10px; bottom: 148px; }
   .side-zh { font-size: 11px; letter-spacing: 6px; }
   .side-en { font-size: 9px; }
   .exhibit-tag { left: 10px; bottom: 150px; max-width: 42vw; }
   .tag-meta { font-size: 8.5px; }
   .pager { bottom: calc(10px + env(safe-area-inset-bottom)); }
   .pager-num { font-size: 13px; }
-  .hand-view { width: 96px; height: 96px; left: 8px; bottom: 8px; }
+  .hand-view { width: 96px; height: 96px; left: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); }
+  /* 触控目标 ≥44px */
+  #gearBtn { min-height: 44px; padding: 8px 0; }
+  .panel-close { min-width: 44px; min-height: 44px; }
+  .model-list button { min-width: 44px; min-height: 44px; }
+  .mini-btn { min-height: 44px; }
+  .mask-card .mc-no { margin-top: 8px; }
+  .mask-card .mc-name { margin-top: 3px; }
   /* 设置面板: 全宽抽屉 */
   .panel { width: 100%; max-width: 100%; }
-  .intro-title { font-size: 12vw; }
+  .intro-title { font-size: 7.2vw; line-height: 1.4; }
   .intro-inner { max-width: 94vw; }
+}
+
+/* 横屏矮视口(手机 landscape): 复用移动端关键规则 */
+@media (max-height: 450px) and (orientation: landscape) {
+  .hud { top: 44px; right: 12px; gap: 3px; }
+  .hud-tip { display: none !important; }
+  .title-block { left: 8px; top: 56px; }
+  .title-text { font-size: 5vmin !important; }
+  .side-block { display: none; } /* 横屏与 AR 钮相交, 隐藏装饰副题 */
+  .exhibit-tag { display: none; }
+  .hand-view { width: 72px; height: 72px; }
+  .ar-btn { min-height: 44px; }
+  .intro-gallery { grid-template-columns: repeat(5, 1fr); gap: 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .intro-status::before { animation: none; opacity: .6; }
   .intro, .text-layer, .panel { transition: none; }
+}
+
+/* ---------- AR 试戴 UI（arMask.js 挂载，样式集中于此） ---------- */
+.ar-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  padding-top: calc(10px + env(safe-area-inset-top));
+  background: rgba(255, 255, 255, .82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--ink-100);
+  font-size: 13px;
+  letter-spacing: 1px;
+  user-select: none;
+  -webkit-user-select: none;
+  border-bottom: 1px solid var(--ink-25);
+}
+.ar-tip {
+  flex: 1;
+  min-width: 0;                      /* 允许 flex 收缩,390px 不再挤压按钮 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ar-btn {
+  flex: none;
+  min-height: 34px;
+  padding: 6px 16px;
+  border: 1px solid var(--ink-25);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink-100);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: 2px;
+  cursor: pointer;
+}
+.ar-btn:hover { border-color: var(--ink-70); }
+.ar-btn-primary { background: var(--ink-100); color: #fff; border-color: var(--ink-100); }
+/* 入口按钮即退出钮(#ar-mask-btn), 无独立 .ar-exit 元素 */
+@media (max-width: 720px) {
+  .ar-tip { white-space: normal; line-height: 1.45; font-size: 12px; }
+  .ar-btn { min-height: 44px; padding: 8px 12px; }
 }

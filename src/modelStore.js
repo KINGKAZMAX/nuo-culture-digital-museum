@@ -10,11 +10,11 @@ export class ModelStore {
     this.listeners = new Set();
     // 展品铭牌: 中文名 + 一句话(按面具实际配色命名)
     const LABELS = {
-      nuo1: ["鎏金开山", "金身红冠 · 驱疫先锋之相"],
-      nuo2: ["玄青判官", "青面金睛 · 掌生死簿之神"],
-      nuo3: ["苍玉灵官", "灰玉温润 · 镇宅护法之神"],
-      nuo4: ["琥珀傩公", "琥珀丰润 · 傩坛先祖之相"],
-      nuo5: ["赭霞土地", "赭金沉稳 · 一方土地之神"],
+      nuo1: ["鎏金开山", "Gilded Pioneer", "金身红冠 · 驱疫先锋之相"],
+      nuo2: ["玄青判官", "Indigo Judge", "青面金睛 · 掌生死簿之神"],
+      nuo3: ["苍玉灵官", "Pale-Jade Guardian", "灰玉温润 · 镇宅护法之神"],
+      nuo4: ["琥珀傩公", "Amber Patriarch", "琥珀丰润 · 傩坛先祖之相"],
+      nuo5: ["赭霞土地", "Ochre Land Guardian", "赭金沉稳 · 一方土地之神"],
     };
     // 导出资产(.tdp.gz): 位置/姿态/颜色已按最终渲染数据烘焙,恒等变换
     for (const [name, info] of Object.entries(manifest.models ?? manifest)) {
@@ -28,7 +28,8 @@ export class ModelStore {
         baseScale: 1,
         baseTilt: 0,
         label: LABELS[name]?.[0],
-        tagline: LABELS[name]?.[1],
+        labelEn: LABELS[name]?.[1],
+        tagline: LABELS[name]?.[2],
       });
     }
   }

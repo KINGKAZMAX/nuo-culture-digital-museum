@@ -2,14 +2,17 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>贵傩戏-傩文化数字博物馆 · Nuo Culture Digital Museum</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>贵傩戏 GUI NUO OPERA · 傩文化数字博物馆 | 贵州傩戏非遗面具 · 点云 · AR 试戴</title>
+  <meta name="description" content="贵傩戏 GUI NUO OPERA · 傩文化数字博物馆：65,536 点云呈现五件贵州傩面具非遗珍品，支持 AR 试戴、手势交互与语音讲解。Nuo Culture Digital Museum — Guizhou Nuo Opera masks with AR try-on." />
+  <meta name="keywords" content="傩戏, 傩文化, 贵州傩戏, 傩面具, 傩堂戏, 非物质文化遗产, 数字博物馆, 贵傩戏, 点云, AR试戴, Nuo Opera, Nuo Mask, Guizhou, Intangible Cultural Heritage, Digital Museum, AR Try-on" />
+  <meta property="og:title" content="贵傩戏 GUI NUO OPERA · 傩文化数字博物馆" />
+  <meta property="og:description" content="65,536 点云呈现五件贵州傩面具非遗珍品 · AR 试戴 · 手势交互 · 语音讲解 | Nuo Culture Digital Museum" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="贵傩戏 · GUI NUO OPERA" />
+  <meta property="og:url" content="https://kingkazmax.github.io/nuo-culture-digital-museum/" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🎭</text></svg>" />
-  <!-- 离线字体预加载（href 与 main.js injectFontCss 完全一致，JS 会自动去重）：
-       草书主标题 + 宋体衬线；其余字体由 JS 在用户切换时按需注入 -->
-  <link rel="stylesheet" href="./fonts/long-cang/index.css" />
-    <link rel="stylesheet" href="./fonts/liu-jian-mao-cao/index.css" />
-  <link rel="stylesheet" href="./fonts/noto-serif-sc/400.css" />
+  <!-- 无衬线体系走系统字体栈,零下载;书法/宋体仅在设置面板选用时按需注入 -->
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
@@ -22,10 +25,11 @@
       <span class="exhibit-no">01</span>
       <span class="topbar-sep" aria-hidden="true">─</span>
       <span class="exhibit-name">傩面</span>
+      <span class="exhibit-en">NUO MASK</span>
     </div>
     <nav class="topbar-nav">
-      <span class="topbar-link is-static">馆藏</span>
-      <button id="gearBtn" class="topbar-link gear-btn" title="设置">设 置</button>
+      <span class="topbar-link is-static">馆藏<span class="topbar-en">COLLECTION</span></span>
+      <button id="gearBtn" class="topbar-link gear-btn" title="设置">设 置<span class="topbar-en">SETTINGS</span></button>
     </nav>
   </header>
 
@@ -71,21 +75,21 @@ MASK</div>
 
   <!-- 状态提示（无底色细字） -->
   <div id="hud" class="hud">
-    <div id="hudModel" class="hud-item">模型 nuo1 / 5</div>
-    <div id="hudGesture" class="hud-item">手势：--</div>
+    <div id="hudModel" class="hud-item">展品 EXHIBIT 1 / 5</div>
+    <div id="hudGesture" class="hud-item">手势 GESTURE --</div>
     <div id="hudTip" class="hud-item hud-tip">单击切面具 · 拖拽旋转 · 滚轮缩放 · 摄像头:捏合切换/握拳爆散/双手拉距缩放</div>
   </div>
 
   <!-- 启动遮罩（黑白暗色 + 全面具画廊,点击展品进入） -->
   <div id="intro" class="intro">
     <div class="intro-inner">
-      <p class="intro-kicker">GUIZHOU NUO · POINT CLOUD ARCHIVE</p>
+      <p class="intro-kicker">GUIZHOU NUO OPERA · POINT CLOUD ARCHIVE</p>
       <div class="intro-title">贵傩戏-傩文化数字博物馆<span class="intro-seal" aria-hidden="true">傩</span></div>
-      <p class="intro-sub">Nuo Culture Digital Museum · 手势交互点云</p>
+      <p class="intro-sub">Nuo Culture Digital Museum · 点云展陈 · 手势交互 · Gesture Interactive</p>
       <div class="intro-rule" aria-hidden="true"></div>
-      <div id="introStatus" class="intro-status">正在准备馆藏…</div>
+      <div id="introStatus" class="intro-status">正在准备馆藏 PREPARING…</div>
       <div id="introGallery" class="intro-gallery" hidden></div>
-      <p class="intro-hint" id="introHint" hidden>选择一件展品入馆 · 馆内有语音向导</p>
+      <p class="intro-hint" id="introHint" hidden>选择一件展品入馆 · 馆内有语音向导 · TAP TO ENTER</p>
     </div>
   </div>
 
@@ -97,7 +101,7 @@ MASK</div>
     </div>
 
     <section class="panel-sec">
-      <h3>手势交互</h3>
+      <h3>手势交互 · GESTURE</h3>
       <label class="row"><span>摄像头</span><select id="camSelect"></select></label>
       <label class="row"><span>启用摄像头</span><input type="checkbox" id="camEnabled" /></label>
       <label class="row"><span>自动旋转 °/s</span><input type="range" id="spinSpeed" min="-60" max="60" step="1" value="12" /><b id="spinSpeedV">21</b></label>
@@ -110,28 +114,29 @@ MASK</div>
     </section>
 
     <section class="panel-sec">
-      <h3>文案（双击画面文字也可直接编辑）</h3>
-      <label class="row"><span>主标题</span><input type="text" id="cfgTitle" value="贵傩戏-傩文化数字博物馆" /></label>
+      <h3>展签文案 · TEXT（双击画面文字可编辑）</h3>
+      <label class="row"><span>主标题</span><input type="text" id="cfgTitle" value="贵傩戏" /></label>
       <label class="row"><span>英文副题</span><input type="text" id="cfgSideEn" value="NUO CULTURE DIGITAL MUSEUM" /></label>
       <label class="row"><span>中文副题</span><input type="text" id="cfgSideZh" value="民俗 · 仪式 · 戏面" /></label>
       <label class="row"><span>字体</span>
         <select id="cfgFont">
+          <option value="Sans">无衬线 Sans（默认）</option>
           <option value="Long Cang">龙藏行书</option>
           <option value="Liu Jian Mao Cao">刘建军毛草（草书）</option>
           <option value="Zhi Mang Xing">志莽行书</option>
           <option value="Ma Shan Zheng">马善政毛笔楷</option>
           <option value="ZCOOL XiaoWei">站酷小薇</option>
           <option value="Noto Serif SC">思源宋体</option>
-          <option value="Kaiti SC, STKaiti, KaiTi">楷体（系统）</option>
+          <option value="Kaiti SC">楷体（系统）</option>
         </select>
       </label>
       <label class="row"><span>标题字号</span><input type="range" id="cfgTitleSize" min="40" max="220" step="2" value="100" /><b id="cfgTitleSizeV">120</b></label>
-      <label class="row"><span>标题颜色</span><input type="color" id="cfgColor" value="#f2f2f2" /></label>
+      <label class="row"><span>标题颜色</span><input type="color" id="cfgColor" value="#1A1A1A" /></label>
       <label class="row"><span>显示文案</span><input type="checkbox" id="cfgTextVisible" checked /></label>
     </section>
 
     <section class="panel-sec">
-      <h3>模型（点云 / 新增）</h3>
+      <h3>馆藏模型 · MODELS</h3>
       <ul id="modelList" class="model-list"></ul>
       <div class="row row-actions">
         <button id="addModelBtn" class="mini-btn">＋ 上传模型</button>

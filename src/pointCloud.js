@@ -156,7 +156,7 @@ void main() {
   vec3 vl1 = normalize(vec3(0.51, -0.23, -0.83));
   vec3 vl2 = normalize(vec3(-0.57, -0.17, -0.80));
   float diff = max(0.0, dot(n, vl1)) * 0.995 + max(0.0, dot(n, vl2)) * 2.0;
-  float shade = 0.58 + diff * 0.88;
+  float shade = min(0.58 + diff * 0.88, 0.94); // 白底高光点 clamp,防纯白点融进背景
   float edge = smoothstep(0.25, 0.16, r2);
   vec3 base = vColor;
   if (uInk > 0.5) {

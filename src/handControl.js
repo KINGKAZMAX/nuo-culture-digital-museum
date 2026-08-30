@@ -140,7 +140,7 @@ export class HandControl {
           // 连续两个窗口同向才确认: 单帧跳变(手 ID 切换/噪声)不触发
           const prev = this._swipePrevDx ?? 0;
           this._swipePrevDx = dxs;
-          if (ready && trusted && near && Math.abs(prev) > 0.04 && Math.sign(prev) === Math.sign(dxs) && (this._swipeLock ?? 0) < tNow) {
+          if (ready && trusted && near && Math.abs(prev) > 0.04 && Math.sign(prev) === Math.sign(dxs) && (this._swipeLock ?? 0) < tNow && (this._lastPalmT ?? -9) > now - 0.9) {
             const dir = dxs > 0 ? -1 : 1; // 手向左挥 -> 下一件
             this._swipeX = wxNow; this._swipeT = tNow;
             this._swipeLock = tNow + 0.7;
@@ -185,8 +185,9 @@ export class HandControl {
       const pinch = pinchDistance(lm);
       this._pinchHold = pinch < this.cfg.pinchEnter ? (this._pinchHold ?? 0) + 1 : 0; // 捏合需持续~3帧才确认
       this._openHold = pinch > this.cfg.pinchExit ? (this._openHold ?? 0) + 1 : 0;   // 武装需先持续~5帧张开
+      if (gestureName === "Open_Palm") this._lastPalmT = now; // 真实手才会被稳定标注张开; 幻觉紧凑手没有
       if (fistScore < 0.4 && ready && trusted && near) {
-        if (st.pinchArmed && pinch < this.cfg.pinchEnter && this._pinchHold >= 3 && (this._swipeLock ?? 0) < now) {
+        if (st.pinchArmed && pinch < this.cfg.pinchEnter && this._pinchHold >= 3 && (this._swipeLock ?? 0) < now && (this._lastPalmT ?? -9) > now - 0.7) {
           st.pinchArmed = false;
           this._swipeLock = now + 0.6; // 触发后冷却, 防检测闪烁连环切
           this._trigText = `PINCH p${(pinch * 100) | 0}`;
@@ -196,6 +197,7 @@ export class HandControl {
           window.dispatchEvent(new CustomEvent("ar-switch", { detail: 1 }));
         } else if (!st.pinchArmed && this._openHold >= 5) {
           st.pinchArmed = true; // 真人捏合必先经历"张开"阶段; 幻觉紧凑手永远到不了这里
+          this._lastPalmT = now; // 武装成功即视为真实手(标签闪 None 不至于永久锁死)
         }
       }
       st.pinch = pinch;
@@ -217,6 +219,7 @@ export class HandControl {
       st.pinchArmed = false;
       this._pinchHold = 0;
       this._openHold = 0;
+      this._lastPalmT = -9;
       // 手离开:爆散缓慢回落,旋转回到自转
       st.disp = damp(st.disp, 0, this.cfg.dispTau, dt);
       st.ryTarget = undefined;

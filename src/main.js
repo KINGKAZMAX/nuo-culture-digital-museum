@@ -9,14 +9,14 @@ import { loadBPC } from "./pointCloud.js";
 const $ = (id) => document.getElementById(id);
 
 // ---------- 持久化配置 ----------
-const LS_KEY = "nuo-mask-cfg-v3";
+const LS_KEY = "nuo-mask-cfg-v4"; // v4: 纯白主题 + 无衬线默认(旧值会覆盖新默认,强制升级)
 const defaultCfg = {
-  title: "贵傩戏-傩文化数字博物馆",
-  sideEn: "NUO CULTURE DIGITAL MUSEUM",
+  title: "贵傩戏", // 竖排大标题用短名(全称在画廊/浏览器标题/海报), 避免竖排列溢出裁剪
+  sideEn: "GUI NUO OPERA · NUO CULTURE DIGITAL MUSEUM",
   sideZh: "民俗 · 仪式 · 戏面",
-  font: "Long Cang",
-  titleSize: 176,
-  color: "#141414",
+  font: "Sans",
+  titleSize: 128,
+  color: "#1A1A1A",
   textVisible: true,
   spinSpeed: 6,
   rotSens: 1,
@@ -37,7 +37,9 @@ const cfg = loadCfg();
 
 // ---------- 字体注入 ----------
 function injectFontCss(font) {
+  if (font === "Sans") return; // 系统无衬线栈,零下载
   const map = {
+    "Sans": null,
     "Liu Jian Mao Cao": "./fonts/liu-jian-mao-cao/index.css",
     "Zhi Mang Xing": "./fonts/zhi-mang-xing/index.css",
     "Long Cang": "./fonts/long-cang/index.css",
@@ -58,10 +60,11 @@ function injectFontCss(font) {
 function applyCfg() {
   const title = $("titleText");
   title.textContent = cfg.title;
-  title.style.fontFamily = `'${cfg.font}', 'Liu Jian Mao Cao', 'Kaiti SC', 'STKaiti', serif`;
+  const sansStack = `'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Helvetica Neue', Arial, sans-serif`;
+  title.style.fontFamily = cfg.font === "Sans" ? sansStack : `'${cfg.font}', ${sansStack}`;
   title.style.fontSize = `calc(${cfg.titleSize} / 12.5 * 1vmin)`;
   title.style.color = cfg.color;
-  title.style.textShadow = "none"; // 宣纸底不用辉光
+  title.style.textShadow = "none"; // 白底不用辉光
   document.querySelector(".side-en").textContent = cfg.sideEn.replace(/\s+/g, "\n");
   document.querySelector(".side-zh").textContent = cfg.sideZh;
   document.documentElement.style.setProperty("--gold", cfg.color);
@@ -103,8 +106,9 @@ async function fetchRetry(url, tries = 4) {
 async function main() {
   applyCfg();
   window.__step = "manifest";
-  introStatus.textContent = "加载点云模型…";
+  introStatus.textContent = "加载点云模型… LOADING";
   const manifest = await (await fetchRetry("./models/manifest.json")).json();
+  window.__nuoManifest = manifest; // AR fitProfile 覆盖读取用
   store = new ModelStore(manifest);
   await store.init();
   defs = store.defs;
@@ -136,7 +140,7 @@ async function main() {
     video: null,
     handCanvas: $("handCanvas"),
     hudGesture: (name, score) => {
-      $("hudGesture").textContent = `手势：${name === "--" ? "--" : name + " " + (score).toFixed(2)}`;
+      $("hudGesture").textContent = `手势 GESTURE ${name === "--" ? "--" : name + " " + (score).toFixed(2)}`;
     },
   });
   // AR 打开时切换走 ar-switch -> ar-mask-switch 事件路径, 这里直接切会造成一次手势切两步
@@ -164,7 +168,7 @@ async function main() {
   if (new URLSearchParams(location.search).get("view") === "1") {
     enterHall(0, { welcome: false });
   }
-  $("hudTip").textContent = "五面同屏 · 单击/捏合转台换展品 · 拖拽旋转 · 滚轮缩放 · 握拳爆散 · 双击文字可编辑";
+  $("hudTip").textContent = "五面同屏 · 单击/捏合切换 · 拖拽旋转 · 滚轮缩放 · 握拳爆散";
 }
 
 // ---------- 三步渐进引导 ----------
@@ -187,7 +191,7 @@ function guideAdvance() {
 (function initGuideTip() {
   const el = document.createElement("div");
   el.id = "guideTip";
-  el.style.cssText = "position:fixed;left:50%;transform:translateX(-50%);bottom:calc(34px + env(safe-area-inset-bottom));z-index:45;font-family:'Noto Serif SC',serif;font-size:13px;letter-spacing:2px;color:#c9c6bd;background:rgba(10,10,10,.72);padding:8px 18px;border-radius:2px;border-bottom:1px solid rgba(232,229,222,.35);opacity:0;transition:opacity .5s;pointer-events:none;max-width:86vw;text-align:center;";
+  el.style.cssText = "position:fixed;left:50%;transform:translateX(-50%);bottom:calc(150px + env(safe-area-inset-bottom));z-index:45;font-family:'PingFang SC','Microsoft YaHei',sans-serif;font-size:13px;letter-spacing:2px;color:#1A1A1A;background:rgba(255,255,255,.92);padding:8px 18px;border-radius:2px;border-bottom:1px solid rgba(0,0,0,.12);box-shadow:0 4px 14px rgba(0,0,0,.08);opacity:0;transition:opacity .5s;pointer-events:none;max-width:86vw;text-align:center;";
   document.body.appendChild(el);
 })();
 // 入馆后启动引导;对应操作发生时快进
@@ -208,6 +212,13 @@ window.__getMaskCloud = function () {
   if (!pos || !col) return null;
   return { positions: pos.array, colors: col.array, count: pos.count };
 };
+window.__getMaskKey = function () {
+  return defs[currentModelIndex]?.key ?? null;
+};
+window.__getMaskManifestFit = function () {
+  const key = defs[currentModelIndex]?.key;
+  return window.__nuoManifest?.models?.[key]?.fit ?? null;
+};
 
 // ---------- 入口画廊 ----------
 function buildIntroGallery(thumbs) {
@@ -227,13 +238,16 @@ function buildIntroGallery(thumbs) {
     const name = document.createElement("span");
     name.className = "mc-name";
     name.textContent = d.label ?? d.name;
-    card.append(no, img, name);
+    const en = document.createElement("span");
+    en.className = "mc-en";
+    en.textContent = d.labelEn ?? "";
+    card.append(no, img, name, en);
     card.addEventListener("click", () => enterHall(i, { welcome: true }));
     g.appendChild(card);
   });
   g.hidden = false;
   $("introHint").hidden = false;
-  introStatus.textContent = "馆藏就绪";
+  introStatus.textContent = "馆藏就绪 COLLECTION READY";
 }
 
 function enterHall(idx, { welcome }) {
@@ -265,6 +279,14 @@ function enterHall(idx, { welcome }) {
     .catch((e) => console.warn("AR 模块不可用", e));
 }
 
+// AR 试戴打开时隐藏语音钮(避让退出按钮,手机拇指区防误触)
+window.addEventListener("ar-mask-change", (e) => {
+  const open = !!e.detail?.open;
+  const vgRoot = document.querySelector(".vg-root");
+  if (vgRoot) vgRoot.style.display = open ? "none" : "";
+  document.body.classList.toggle("ar-open", open); // AR 全屏: 隐藏展馆 UI 防叠压
+});
+
 // ---------- 自动讲解: 傩文化图文轮播(向导语音随行) ----------
 let autoTourTimer = null;
 const TOUR_IDS = ["what_is_nuo", "mask_origin", "mask_colors", "guizhou_nuo", "nuo_opera_dance"];
@@ -293,8 +315,10 @@ function updateExhibitUI(idx) {
   const no = String(idx + 1).padStart(2, "0");
   const noEl = document.querySelector(".exhibit-no");
   const nameEl = document.querySelector(".exhibit-name");
+  const enEl = document.querySelector(".exhibit-en");
   if (noEl) noEl.textContent = no;
   if (nameEl) nameEl.textContent = def.label ?? def.name;
+  if (enEl) enEl.textContent = def.labelEn ?? "NUO MASK";
   const b = document.querySelector(".pager-num b");
   const total = document.querySelectorAll(".pager-num span")[1];
   if (b) b.textContent = no;
@@ -302,7 +326,7 @@ function updateExhibitUI(idx) {
   document.querySelectorAll(".pager-seg").forEach((seg, i) => {
     seg.classList.toggle("is-current", i === idx);
   });
-  $("hudModel").textContent = `展品 ${def.label ?? def.name} · ${idx + 1} / ${defs.length}`;
+  $("hudModel").textContent = `展品 ${def.label ?? def.name} ${def.labelEn ?? ""} · ${idx + 1} / ${defs.length}`;
 }
 
 async function ensureGeometry(def) {
@@ -550,7 +574,7 @@ function bindUI() {
       hand.video = video;
       window.__handVideo = video; // AR 模块复用此流(R6: iOS 单流限制)
       await hand.start(video);
-      $("hudGesture").textContent = "手势：已开启";
+      $("hudGesture").textContent = "手势 GESTURE 已开启 ON";
     } catch (e) {
       $("camEnabled").checked = false;
       $("hudGesture").textContent = "摄像头不可用: " + e.message;
@@ -567,7 +591,7 @@ function bindUI() {
       for (const track of v.srcObject.getTracks()) track.stop();
       v.srcObject = null;
     }
-    $("hudGesture").textContent = "手势：--";
+    $("hudGesture").textContent = "手势 GESTURE --";
   }
   $("camEnabled").addEventListener("change", async (e) => {
     if (e.target.checked) {
@@ -661,7 +685,7 @@ function bindUI() {
         // 缓存已有几何,直接可用
         geoCache.set(def.key, geo);
         rebuildGallery();
-        $("hudModel").textContent = `已入馆 ${def.name}`;
+        $("hudModel").textContent = `已入馆 ENTERED · ${def.label ?? def.name}`;
       } catch (err) {
         alert("模型导入失败: " + err.message);
       }

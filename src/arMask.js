@@ -3,8 +3,9 @@
 //
 // ---- 数据钩子(由主代理提供) ----
 //   window.__getMaskCloud() -> { positions:Float32Array(n*3), colors:Float32Array(n*3), count }
-//     positions: TDPC 原始坐标 —— x/z 已居中(约 ±1.3), y 为 0..2.67(底部 0 / 顶部 2.67),
-//                面部朝 +z。本模块抽样时归一: y -= 1.35 居中后三轴统一 /2.67(保持比例)。
+//     positions: TDPC 原始坐标 —— 实测五面具三轴均已以 0 为中心(约 ±1.3~1.5), 面部朝 +z。
+//                本模块抽样时按逐云 bbox 几何中心重新居中(不依赖任何硬编码偏移),
+//                对资产重导出与用户上传模型同样稳健。
 //     colors: linear 空间(做过 pow 2.2), 绘制前转 sRGB: pow(c, 1/2.2)。
 //     面具切换后返回新的对象引用即可, 本模块按引用变化自动重抽样。
 //   window 'ar-switch'  { detail: +1 | -1 } —— 手势层派发的切换指令(仅 AR 打开时响应)。
@@ -24,7 +25,6 @@ import { FilesetResolver, FaceLandmarker } from "@mediapipe/tasks-vision";
 // ---------------- 常量 ----------------
 const BTN_ID = "ar-mask-btn";
 const TARGET_POINTS = 24000; // 抽样目标点数(ImageData 直写,脏区提交,可承载)
-const Y_OFFSET = 1.35; // TDPC y 0..2.67 -> 居中
 // One Euro Filter(R5): 静止消抖、快速运动自适应减滞后
 class OneEuro {
   constructor(minCutoff = 1, beta = 0.02, dCutoff = 1) {
@@ -52,13 +52,41 @@ const IDX_CHIN = 152; // 下巴(几何合理性校验用)
 const IDX_FOREHEAD = 10; // 额头顶(全覆盖: 面具高度跨额头-下巴)
 const IDX_TEMPLE_L = 127; // 太阳穴(R1: 面部最宽 127<->356)
 const IDX_TEMPLE_R = 356;
+const IDX_IRIS_R = 468; // 右虹膜中心(478 点制,解剖右眼;镜像显示后位于屏幕右侧)
+const IDX_IRIS_L = 473; // 左虹膜中心
 const MASK_FACE_RATIO = 2.05; // 面具宽 ≈ 2.05 × 两眼外角间距(完全盖脸)
+
+// ---------------- 每面具贴合档案(教程 pointtransform 思想: 每具独立校准) ----------------
+// eyeY: 面具眼线在点云 bbox 归一坐标的高度(bbox 中心 0 / bbox 高 1 / 向上为正);
+//       运行时把这条线对齐到用户双眼中点 —— 五官锚点绑定的核心参数。
+// scaleMul: 乘在自动拟合 s 上的系数(治高瘦面具被 min(sW,sH) 压小 / 扁宽面具撑不满)。
+// dy: 残余垂直微调(占脸高比例), 肉眼校准专用。
+// 合并优先级: manifest.models[key].fit > 下表 > DEFAULT。?arcalib=1 可视化校准。
+const FIT_DEFAULT = { eyeY: 0, scaleMul: 1, dy: 0 };
+const FIT_PROFILES = {
+  nuo1: { eyeY: -0.02, scaleMul: 1.06, dy: 0 },  // 鎏金开山 H/W≈1.26(视觉QA后初校)
+  nuo2: { eyeY: 0.1, scaleMul: 1.3, dy: 0 },     // 玄青判官 H/W≈1.74(待校)
+  nuo3: { eyeY: -0.09, scaleMul: 1.05, dy: 0 },  // 苍玉灵官 H/W≈1.39
+  nuo4: { eyeY: 0.01, scaleMul: 1.05, dy: 0 },   // 琥珀傩公 H/W≈1.07
+  nuo5: { eyeY: -0.15, scaleMul: 1.45, dy: 0 },  // 赭霞土地 H/W≈1.96 高冠
+};
+function loadCalib() {
+  try { return JSON.parse(localStorage.getItem(CALIB_LS_KEY) ?? "{}"); } catch { return {}; }
+}
+function fitFor(key) {
+  const mFit = window.__getMaskManifestFit?.() ?? null; // 当前面具的 manifest 覆盖
+  const cFit = loadCalib()[key] ?? null;                 // arcalib 肉眼校准覆盖
+  return { ...FIT_DEFAULT, ...(FIT_PROFILES[key] ?? {}), ...(mFit ?? {}), ...(cFit ?? {}) };
+}
+const CALIB_LS_KEY = "nuo-ar-fit-calib"; // arcalib 模式微调值的本地持久化
 const CENTER_T = 0.35; // 备用: 眼-鼻锚点中心
 const SMOOTH_TAU = 0.09; // 中心/缩放/角度指数平滑时间常数(s)
 const FACE_LOST_MS = 450; // 丢脸宽限(防眨眼闪烁)
 const BASE_ALPHA = 0.85; // 点基础透明度
 const BACK_ALPHA = 0.85 * 0.35; // z<0(脸后)的点 ×0.35
-const TIP_DEFAULT = "AR 试戴中 · 左半屏上一个 / 右半屏下一个";
+const TIP_DEFAULT = "AR TRY-ON · 左半屏上一个 / 右半屏下一个";
+const TIP_DEFAULT_MOBILE = "左半屏上一个 · 右半屏下一个";
+const CALIB_ON = new URLSearchParams(location.search).has("arcalib"); // ?arcalib=1 校准模式
 
 // ---------------- 模块状态 ----------------
 let button = null;
@@ -79,11 +107,11 @@ function setBtnText(t, restoreMs = 0) {
   button.textContent = t;
   if (restoreMs > 0) {
     setTimeout(() => {
-      if (session?.running) button.textContent = "退出 AR";
-      else button.textContent = "AR 试戴";
+      if (session?.running) button.textContent = "退出 AR · EXIT";
+      else button.textContent = "AR 试戴 · TRY-ON";
     }, restoreMs);
   } else {
-    button.textContent = session?.running ? "退出 AR" : t;
+    button.textContent = session?.running ? "退出 AR · EXIT" : t;
   }
 }
 
@@ -139,7 +167,7 @@ function ensureButton() {
   );
   button.id = BTN_ID;
   button.type = "button";
-  button.textContent = "AR 试戴";
+  button.textContent = "AR 试戴 · TRY-ON";
   button.addEventListener("click", toggleAR);
   button.addEventListener("mouseenter", () => {
     if (session?.running) button.style.background = "rgba(34,40,58,0.85)";
@@ -175,33 +203,25 @@ function buildDom(s) {
     requestSwitch(e.clientX < window.innerWidth / 2 ? -1 : 1);
   });
 
-  // 顶部提示条(z 7): 状态文案 + 返回按钮
-  const bar = makeEl(
-    "div",
-    [
-      "position:fixed;top:0;left:0;right:0;z-index:7",
-      "display:flex;align-items:center;justify-content:space-between;gap:12px",
-      "padding:10px 16px;background:rgba(8,10,14,0.55)",
-      "backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)",
-      "color:#fff;font-size:13px;letter-spacing:1px;user-select:none;-webkit-user-select:none",
-    ].join(";")
-  );
-  const tip = makeEl("span", "white-space:nowrap;overflow:hidden;text-overflow:ellipsis");
-  const back = makeEl(
-    "button",
-    "flex:none;padding:6px 14px;border:1px solid rgba(255,255,255,0.4);border-radius:999px;" +
-      "background:rgba(255,255,255,0.08);color:#fff;font-size:12px;letter-spacing:2px;cursor:pointer"
-  );
+  // 顶部提示条(z 7): 状态文案 + 打卡/返回(样式类见 style.css .ar-*, 含 390px 与安全区适配)
+  const bar = makeEl("div", null);
+  bar.className = "ar-bar";
+  const tip = makeEl("span", null);
+  tip.className = "ar-tip";
+  const back = makeEl("button", null);
+  back.className = "ar-btn";
   back.type = "button";
-  back.textContent = "返回";
+  back.textContent = "返回 BACK";
   back.addEventListener("click", () => closeAR());
-  const shutter = makeEl(
-    "button",
-    "flex:none;padding:6px 14px;border:1px solid rgba(255,255,255,0.4);border-radius:999px;" +
-      "background:rgba(255,255,255,0.08);color:#fff;font-size:12px;letter-spacing:2px;cursor:pointer"
-  );
+  const shutter = makeEl("button", null);
+  shutter.className = "ar-btn ar-btn-primary";
   shutter.type = "button";
-  shutter.textContent = "拍照打卡";
+  shutter.textContent = "拍照打卡 SNAP";
+  const narrow = matchMedia("(max-width: 720px)").matches; // 窄屏: 短文案防顶条折行堆叠
+  if (narrow) {
+    back.textContent = "返回";
+    shutter.textContent = "打卡";
+  }
   shutter.addEventListener("click", () => captureCheckin(s));
   bar.appendChild(tip);
   bar.appendChild(shutter);
@@ -216,10 +236,19 @@ function buildDom(s) {
   s.bar = bar;
   s.tip = tip;
   s.tipText = "";
+  s.tipDefault = narrow ? TIP_DEFAULT_MOBILE : TIP_DEFAULT;
+  // ?arcalib=1: 校准叠加层(landmark 十字 / 面具 bbox / 眼线), 键盘微调 fitProfile
+  if (CALIB_ON) {
+    const ov = makeEl("canvas", "position:fixed;inset:0;width:100%;height:100%;z-index:8;pointer-events:none");
+    document.body.appendChild(ov);
+    s.calibCanvas = ov;
+    s.calibCtx = ov.getContext("2d");
+    s.fps = { t: 0, n: 0, v: 0 };
+  }
 }
 
 function cleanupDom(s) {
-  for (const k of ["video", "canvas", "bar"]) {
+  for (const k of ["video", "canvas", "bar", "calibCanvas"]) {
     const el = s[k];
     if (el && el.parentNode) el.parentNode.removeChild(el);
     s[k] = null;
@@ -275,9 +304,10 @@ async function ensureLandmarker() {
 
 // ---------------- 开 / 关 ----------------
 async function openAR() {
-  if (session || opening) return;
+  if (opening) return;
+  if (session) closeAR(); // 收敛旧会话(正常应为 null, 防竞态残留)
   opening = true;
-  setBtnText("启动中…");
+  setBtnText("启动中… LOADING");
   let stream = null;
   let shared = false;
   // R6: iOS 同一摄像头只允许一路活跃流 —— 优先复用手势模块的流(同 video 喂两个 task 合法)
@@ -294,7 +324,7 @@ async function openAR() {
       });
     } catch (e) {
       console.warn("[arMask] 摄像头不可用:", e);
-      setBtnText("摄像头不可用", 2600);
+      setBtnText("摄像头不可用 NO CAM", 2600);
       opening = false;
       return;
     }
@@ -320,17 +350,19 @@ async function openAR() {
     dpr: 1,
     ps: 2, // 点尺寸(后端像素)
     prev: null, // 上一帧脏区
+    fit: fitFor(window.__getMaskKey?.()),
+    fitKey: window.__getMaskKey?.() ?? null,
   };
   session = s; // 立即占位, isOn() 生效, toggle 可打断
   try {
     buildDom(s);
-    setTip(s, "AR 引擎加载中…");
+    setTip(s, "AR 引擎加载中… LOADING");
     await ensureLandmarker();
     if (session !== s) return; // 打开过程中被关闭
     s.running = true;
     resizeCanvas(s);
     setTip(s, TIP_DEFAULT);
-    setBtnText("退出 AR");
+    setBtnText("退出 AR · EXIT");
     window.dispatchEvent(new CustomEvent("ar-mask-change", { detail: { open: true } }));
     s.raf = requestAnimationFrame((t) => loop(s, t));
   } catch (e) {
@@ -339,7 +371,7 @@ async function openAR() {
       session = null;
       cleanupDom(s);
       stopStream(s);
-      setBtnText("AR 启动失败", 2600);
+      setBtnText("AR 启动失败 FAILED", 2600);
       window.dispatchEvent(
         new CustomEvent("ar-mask-change", { detail: { open: false, error: String((e && e.message) || e) } })
       );
@@ -357,7 +389,7 @@ function closeAR() {
   cleanupDom(s);
   stopStream(s);
   session = null;
-  setBtnText("AR 试戴");
+  setBtnText("AR 试戴 · TRY-ON");
   window.dispatchEvent(new CustomEvent("ar-mask-change", { detail: { open: false } }));
 }
 
@@ -372,6 +404,7 @@ function resizeCanvas(s) {
     s.canvas.height = h;
     s.img = s.ctx.createImageData(w, h);
     s.buf = s.img.data;
+    s.wbuf = new Float32Array(w * h * 4); // 权重缓存随尺寸重建(旋转屏幕后防越界丢点)
   }
   s.bw = w;
   s.bh = h;
@@ -381,6 +414,9 @@ function resizeCanvas(s) {
 // ---------------- 面具点云抽样(引用变化时重算) ----------------
 function refreshCloud(s) {
   const fn = window.__getMaskCloud;
+  // 面具切换后重读贴合档案(key 变化即刷新)
+  const key = window.__getMaskKey?.() ?? null;
+  if (key !== s.fitKey) { s.fitKey = key; s.fit = fitFor(key); }
   let c = null;
   if (typeof fn === "function") {
     try {
@@ -405,19 +441,33 @@ function refreshCloud(s) {
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
   for (let j = 0; j < m; j++) {
     const i = j * stride * 3;
-    // 归一: y 0..2.67 -> 居中, 三轴统一 /2.67
-    const x = P[i] / NORM_DIV;
-    const y = (P[i + 1] - Y_OFFSET) / NORM_DIV;
-    const z = P[i + 2] / NORM_DIV;
+    const rx = P[i];
+    const ry = P[i + 1];
+    const rz = P[i + 2];
+    if (rx < minX) minX = rx;
+    if (rx > maxX) maxX = rx;
+    if (ry < minY) minY = ry;
+    if (ry > maxY) maxY = ry;
+    if (rz < minZ) minZ = rz;
+    if (rz > maxZ) maxZ = rz;
+  }
+  // 逐云 bbox 几何中心(实测资产已近似居中,这里仍重居中以兼容上传/重导出)
+  const cx0 = (minX + maxX) / 2;
+  const cy0 = (minY + maxY) / 2;
+  const cz0 = (minZ + maxZ) / 2;
+  for (let j = 0; j < m; j++) {
+    const i = j * stride * 3;
+    // 归一: 以 bbox 中心为原点, 三轴统一 /2.67(保持比例)
+    const x = (P[i] - cx0) / NORM_DIV;
+    const y = (P[i + 1] - cy0) / NORM_DIV;
+    const z = (P[i + 2] - cz0) / NORM_DIV;
     px[j] = x;
     py[j] = y;
     pz[j] = z;
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
     if (C && C.length >= (j * stride + 1) * 3) {
       col[j * 3] = toSrgbByte(C[i]);
       col[j * 3 + 1] = toSrgbByte(C[i + 1]);
@@ -428,7 +478,8 @@ function refreshCloud(s) {
       col[j * 3 + 2] = 168;
     }
   }
-  s.samp = { px, py, pz, col, m, width: Math.max(0.001, maxX - minX), height: Math.max(0.001, maxY - minY) };
+  // min/max 为首圈原始坐标跨度(第二圈覆写条件永假), ÷NORM_DIV 得归一化跨度
+  s.samp = { px, py, pz, col, m, width: Math.max(0.001, (maxX - minX) / NORM_DIV), height: Math.max(0.001, (maxY - minY) / NORM_DIV) };
 }
 
 // linear -> sRGB 字节(轻提亮, 配合 additive 发光感)
@@ -439,10 +490,11 @@ function toSrgbByte(v) {
 
 // ---------------- 主循环 ----------------
 function loop(s, t) {
-  if (!s.running) return;
+  if (!s.running || s !== session) { s.running = false; return; } // 会话已被替换: 防孤儿循环
   s.raf = requestAnimationFrame((tt) => loop(s, tt));
   try {
     const v = s.video;
+    if (v && v.videoWidth === 0) { closeAR(); return; } // 轨道被外部停止: 自动退出防静默冻结
     if (v && v.readyState >= 2 && landmarker && v.currentTime !== s.lastVideoTime) {
       s.lastVideoTime = v.currentTime;
       s.result = landmarker.detectForVideo(v, performance.now());
@@ -469,11 +521,18 @@ function mapLm(s, lm, out) {
 
 function render(s, now) {
   refreshCloud(s);
+  // 虹膜锚点(478 点制存在时)—— 五官绑定主锚, 供 render 与校准层共用
+  let LI = null, RI = null, hasIris = false;
   const lm = s.result && s.result.faceLandmarks && s.result.faceLandmarks[0];
   const hasCloud = s.cloudOk && !!s.samp;
-  if (!lm) window.__arDbg = { lm: 0, lost, hasCloud };
+  hasIris = !!(lm && lm.length > IDX_IRIS_L);
+  if (hasIris) {
+    LI = mapLm(s, lm[IDX_IRIS_L], { x: 0, y: 0 }); // 镜像后屏幕左虹膜
+    RI = mapLm(s, lm[IDX_IRIS_R], { x: 0, y: 0 }); // 屏幕右虹膜
+  }
   if (lm) s.lastFaceSeen = now;
   const lost = now - s.lastFaceSeen > FACE_LOST_MS;
+  if (!lm) { window.__arDbg = { lm: 0, lost, hasCloud }; if (CALIB_ON) drawCalib(s, null); }
   // 长丢后重置滤波器, 防旧状态缓慢爬升(R5)
   if (lost && s.oe) { for (const k of Object.keys(s.oe)) s.oe[k].reset(); s.sm = null; }
 
@@ -481,7 +540,7 @@ function render(s, now) {
   if (now < s.flashUntil) {
     /* 保留闪现文案 */
   } else {
-    setTip(s, !hasCloud ? "面具数据未就绪" : lost ? "未检测到人脸 · 请正对镜头" : TIP_DEFAULT);
+    setTip(s, !hasCloud ? "面具数据未就绪 LOADING MASK" : lost ? "未检测到人脸 NO FACE · 请正对镜头 FACE THE CAMERA" : (s.tipDefault ?? TIP_DEFAULT));
   }
 
   // 1) 清掉上一帧脏区(只动了缓冲区, 稍后需 putImageData 提交)
@@ -503,17 +562,32 @@ function render(s, now) {
     const faceSpanY = Math.hypot(CH.x - FH.x, CH.y - FH.y); // 额头-下巴全脸高
     const faceH = CH.y - (L.y + R.y) / 2;
     // 几何合理性: 眼距/脸高过小视为误检, 本帧不更新
-    window.__arDbg = { lm: 1, lost, hasCloud, Wpx: Math.round(Wpx), dpr: s.dpr, faceH: Math.round(faceH), faceSpanY: Math.round(faceSpanY), m: s.samp?.m, ps: s.ps, sm: s.sm ? { cx: Math.round(s.sm.cx), cy: Math.round(s.sm.cy), s: +s.sm.s.toFixed(3) } : null, bw: s.bw, bh: s.bh };
+    window.__arDbg = { lm: 1, lost, hasCloud, iris: hasIris, Wpx: Math.round(Wpx), dpr: s.dpr, faceH: Math.round(faceH), faceSpanY: Math.round(faceSpanY), m: s.samp?.m, ps: s.ps, fit: s.fit, sm: s.sm ? { cx: Math.round(s.sm.cx), cy: Math.round(s.sm.cy), s: +s.sm.s.toFixed(3) } : null, bw: s.bw, bh: s.bh };
     if (Wpx >= 8 * s.dpr && faceH > 4 && faceSpanY > Wpx * 0.8) {
       // 双向拟合: 宽度(太阳穴间距×1.14, R1)与高度(全脸高×1.12)取小, 保证完全覆盖
       const sW = (Math.max(templeSpan * 1.14, Wpx * MASK_FACE_RATIO)) / s.samp.width;
       const sH = (faceSpanY * 1.12) / s.samp.height;
-      const tx = {
-        cx: (FH.x + CH.x) / 2, // 全脸几何中心(额头-下巴中点)
-        cy: (FH.y + CH.y) / 2,
-        s: Math.min(sW, sH),
-        ang: Math.atan2(R.y - L.y, R.x - L.x), // 头部侧倾
-      };
+      const sc = Math.min(sW, sH) * (s.fit?.scaleMul ?? 1);
+      let tx;
+      if (hasIris && LI && RI) {
+        // ---- 五官锚点绑定: 虹膜中线为面具眼线的落点 ----
+        const eyeMid = { x: (LI.x + RI.x) / 2, y: (LI.y + RI.y) / 2 };
+        tx = {
+          cx: eyeMid.x,
+          // 面具眼线(bbox 归一高度 eyeY)落到用户双眼中点; dy 为占脸高残调
+          cy: eyeMid.y + (s.fit?.eyeY ?? 0) * s.samp.height * sc + (s.fit?.dy ?? 0) * faceSpanY,
+          s: sc,
+          ang: Math.atan2(RI.y - LI.y, RI.x - LI.x), // 虹膜连线 = 头部侧倾(比眼角稳)
+        };
+      } else {
+        // 兜底: 无虹膜(旧模型/低算力)时按全脸几何中心
+        tx = {
+          cx: (FH.x + CH.x) / 2,
+          cy: (FH.y + CH.y) / 2,
+          s: sc,
+          ang: Math.atan2(R.y - L.y, R.x - L.x),
+        };
+      }
       // One Euro 滤波(R5): cx/cy/s 位置量, ang 角度量
       if (!s.oe) s.oe = { cx: new OneEuro(1.0, 0.02), cy: new OneEuro(1.0, 0.02), s: new OneEuro(0.8, 0.01), ang: new OneEuro(1.2, 0.05) };
       if (!s.sm) s.sm = { ...tx };
@@ -531,19 +605,25 @@ function render(s, now) {
       const yawProxy = Math.abs(N.x - (L.x + R.x) / 2) / Math.max(1, Wpx);
       const yawTarget = Math.max(0.25, Math.min(1, 1 - (yawProxy - 0.5) / 0.35));
       s.yawFade = (s.yawFade ?? 1) * 0.8 + yawTarget * 0.2;
+      s.calibPts = { L, R, N, CH, FH, TL, TR, LI, RI };
       drawn = paintPoints(s);
     }
   }
-  // 3) 提交: 有绘制提交新脏区; 无绘制但清过旧区 -> 提交清空区, 避免 canvas 残留
-  if (drawn) {
-    s.ctx.putImageData(s.img, 0, 0, drawn.x0, drawn.y0, drawn.x1 - drawn.x0 + 1, drawn.y1 - drawn.y0 + 1);
-    s.prev = drawn;
-  } else if (cleared) {
-    s.ctx.putImageData(s.img, 0, 0, cleared.x0, cleared.y0, cleared.x1 - cleared.x0 + 1, cleared.y1 - cleared.y0 + 1);
-    s.prev = null;
-  } else {
-    s.prev = null;
+  // 3) 提交: 新旧脏区取并集一次提交 —— 清空区必须落盘, 否则快速移动/换面具留残影
+  let commit = drawn;
+  if (drawn && cleared) {
+    commit = {
+      x0: Math.min(drawn.x0, cleared.x0), y0: Math.min(drawn.y0, cleared.y0),
+      x1: Math.max(drawn.x1, cleared.x1), y1: Math.max(drawn.y1, cleared.y1),
+    };
+  } else if (!drawn && cleared) {
+    commit = cleared;
   }
+  if (commit) {
+    s.ctx.putImageData(s.img, 0, 0, commit.x0, commit.y0, commit.x1 - commit.x0 + 1, commit.y1 - commit.y0 + 1);
+  }
+  s.prev = drawn || null;
+  if (CALIB_ON) drawCalib(s, lm, s.calibPts);
 }
 
 // 逐点写入 ImageData —— 预乘加权累积, 脏区归一化后以 source-over 语义叠加
@@ -632,71 +712,197 @@ function clearRegion(s, d) {
   if (s.wbuf) for (let y = y0; y <= y1; y++) s.wbuf.fill(0, (y * bw) * 4 + start, (y * bw) * 4 + start + len);
 }
 
+// ---------------- ?arcalib=1 校准层: landmark/面具bbox/眼线 可视化 + 键盘微调 ----------------
+const CALIB_STEP = () => 0.01; // 基础步进(Shift ×5)
+function nudgeFit(delta) {
+  const s = session;
+  if (!s || !s.fitKey) return;
+  const k = s.fitKey;
+  const cur = fitFor(k);
+  // delta: {eyeY?, scaleMul?, dy?}
+  for (const f of ["eyeY", "scaleMul", "dy"]) if (delta[f]) cur[f] = +(cur[f] + delta[f]).toFixed(4);
+  const all = loadCalib();
+  all[k] = { eyeY: cur.eyeY, scaleMul: cur.scaleMul, dy: cur.dy };
+  try { localStorage.setItem(CALIB_LS_KEY, JSON.stringify(all)); } catch {}
+  s.fit = cur; // 立即生效
+}
+if (CALIB_ON) {
+  window.addEventListener("keydown", (e) => {
+    const big = e.shiftKey ? 5 : 1;
+    const map = {
+      ArrowLeft: { eyeY: -0.01 * big },
+      ArrowRight: { eyeY: 0.01 * big },
+      ArrowUp: { scaleMul: 0.01 * big },
+      ArrowDown: { scaleMul: -0.01 * big },
+      w: { dy: 0.005 * big },
+      s: { dy: -0.005 * big },
+    };
+    const act = map[e.key] ?? map[e.key.toLowerCase()];
+    if (act) { e.preventDefault(); nudgeFit(act); }
+    if (e.key === "c") console.log("[arcalib]", window.__getMaskKey?.(), JSON.stringify(fitFor(window.__getMaskKey?.()), null, 0));
+    if (e.key === "r") {
+      const all = loadCalib(); delete all[window.__getMaskKey?.()];
+      try { localStorage.setItem(CALIB_LS_KEY, JSON.stringify(all)); } catch {}
+      if (session) session.fit = fitFor(session.fitKey);
+      console.log("[arcalib] reset");
+    }
+  });
+}
+function drawCalib(s, lm, P = {}) {
+  const ctx = s.calibCtx;
+  if (!ctx) return;
+  if (s.calibCanvas.width !== s.bw || s.calibCanvas.height !== s.bh) {
+    s.calibCanvas.width = s.bw;
+    s.calibCanvas.height = s.bh;
+  }
+  ctx.clearRect(0, 0, s.bw, s.bh);
+  if (!lm) return;
+  const M = (i) => mapLm(s, lm[i], { x: 0, y: 0 });
+  const cross = (p, col, r = 8) => {
+    ctx.strokeStyle = col; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(p.x - r, p.y); ctx.lineTo(p.x + r, p.y);
+    ctx.moveTo(p.x, p.y - r); ctx.lineTo(p.x, p.y + r);
+    ctx.stroke();
+  };
+  const dprAdj = s.dpr; // 画布为设备像素, mapLm 同坐标系, 无需换算
+  ctx.lineWidth = 2 * dprAdj / Math.max(1, dprAdj); // 保持 2px
+  // 面部关键点
+  const pts = [[33, "#A31621"], [263, "#A31621"], [1, "#1A1A1A"], [152, "#1A1A1A"], [10, "#1A1A1A"], [127, "#8A8A8A"], [356, "#8A8A8A"]];
+  for (const [i, c] of pts) { const p = M(i); if (p) cross(p, c); }
+  if (P.LI) cross(P.LI, "#A31621", 14);
+  if (P.RI) cross(P.RI, "#A31621", 14);
+  // 眼轴线 + 额下巴中轴
+  if (P.LI && P.RI) {
+    const mid = { x: (P.LI.x + P.RI.x) / 2, y: (P.LI.y + P.RI.y) / 2 };
+    ctx.strokeStyle = "rgba(163,22,33,.6)";
+    ctx.beginPath(); ctx.moveTo(P.LI.x, P.LI.y); ctx.lineTo(P.RI.x, P.RI.y); ctx.stroke();
+    cross(mid, "#0a7d38", 18); // 双眼中点(绿) — 应与面具眼线重合
+  }
+  if (P.FH && P.CH) {
+    ctx.strokeStyle = "rgba(26,26,26,.35)";
+    ctx.beginPath(); ctx.moveTo(P.FH.x, P.FH.y); ctx.lineTo(P.CH.x, P.CH.y); ctx.stroke();
+  }
+  // 面具 bbox + 中心十字 + 眼线
+  if (s.prev && s.sm) {
+    const { x0, y0, x1, y1 } = s.prev;
+    ctx.strokeStyle = "rgba(26,26,26,.75)";
+    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    cross({ x: cx, y: cy }, "#1A1A1A", 12);
+    const eyeLineY = s.sm.cy - (s.fit?.eyeY ?? 0) * s.samp.height * s.sm.s;
+    ctx.strokeStyle = "rgba(10,125,56,.85)";
+    ctx.beginPath(); ctx.moveTo(x0 - 20, eyeLineY); ctx.lineTo(x1 + 20, eyeLineY); ctx.stroke();
+  }
+  // HUD 数值(左上,顶条之下)
+  if (s.fps) {
+    const t = performance.now();
+    s.fps.n++;
+    if (t - s.fps.t > 500) { s.fps.v = Math.round((s.fps.n * 1000) / (t - s.fps.t)); s.fps.t = t; s.fps.n = 0; }
+  }
+  const f = s.fit ?? {};
+  const lines = [
+    `MASK ${s.fitKey ?? "?"}  FPS ${s.fps?.v ?? 0}`,
+    `eyeY ${f.eyeY}  scaleMul ${f.scaleMul}  dy ${f.dy}`,
+    `←/→ eyeY  ↑/↓ scaleMul  W/S dy  (Shift ×5)`,
+    `C 打印档案  R 重置`,
+  ];
+  ctx.font = `${Math.round(11 * (s.dpr / 2))}px Menlo, monospace`;
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+  lines.forEach((t, i) => {
+    ctx.fillStyle = "rgba(255,255,255,.9)";
+    ctx.fillText(t, 14 * (s.dpr / 2) + 1, (60 + i * 17) * (s.dpr / 2) + 1);
+    ctx.fillStyle = "#A31621";
+    ctx.fillText(t, 14 * (s.dpr / 2), (60 + i * 17) * (s.dpr / 2));
+  });
+}
+
+function roundRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
 // ---------------- 打卡拍照(R7/R10): 视频+面具合成海报 → 分享/保存 ----------------
 async function captureCheckin(s) {
   if (!s.video || !s.canvas) return;
   flashTip(s, "正在生成打卡照…");
   try {
+    // ---- 白卡画廊式海报: 白底卡纸 + 圆角暗色相片区 + 底部无衬线双语标签区 ----
     const winW = window.innerWidth;
     const winH = window.innerHeight;
     const W = 1080;
-    const H = Math.round((W * winH) / winW); // 与窗口同裁切比例, 保证面具对位
+    const MARGIN = 72;          // 白边
+    const BOTTOM = 270;         // 底部标签区高
+    const PW = W - MARGIN * 2;  // 相片区宽 936
+    const PH = Math.round((PW * winH) / winW); // 相片区高(与窗口同比例, 保证面具对位)
+    const H = MARGIN + PH + BOTTOM;
     const cv = document.createElement("canvas");
     cv.width = W;
     cv.height = H;
     const ctx = cv.getContext("2d");
-    // 1) 视频帧(镜像 cover, 与预览一致)
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, W, H);
+    // 1) 圆角裁切: 视频帧(镜像 cover) + 面具叠加层
     const vw = s.video.videoWidth || winW;
     const vh = s.video.videoHeight || winH;
-    const k = Math.max(W / vw, H / vh);
-    const sw = W / k, sh = H / k;
+    const k = Math.max(PW / vw, PH / vh);
+    const sw = PW / k, sh = PH / k;
     const sx = (vw - sw) / 2, sy = (vh - sh) / 2;
+    ctx.save();
+    roundRectPath(ctx, MARGIN, MARGIN, PW, PH, 24);
+    ctx.clip();
     ctx.save();
     ctx.translate(W, 0);
     ctx.scale(-1, 1);
-    ctx.drawImage(s.video, sx, sy, sw, sh, 0, 0, W, H);
+    ctx.drawImage(s.video, sx, sy, sw, sh, W - MARGIN - PW, MARGIN, PW, PH);
     ctx.restore();
-    // 2) 面具叠加层(窗口坐标系等比放大)
-    ctx.drawImage(s.canvas, 0, 0, W, H);
-    // 3) 顶部压暗 + 书法标题 + 印章 + 日期落款
-    await document.fonts.load('120px "Long Cang"', "贵傩戏打卡").catch(() => {});
-    const g = ctx.createLinearGradient(0, 0, 0, W * 0.4);
-    g.addColorStop(0, "rgba(0,0,0,.55)");
-    g.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, W, W * 0.4);
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = Math.round(W * 0.075) + 'px "Long Cang", "STKaiti", serif';
-    ctx.lineWidth = Math.round(W * 0.008);
-    ctx.strokeStyle = "rgba(0,0,0,.35)";
-    ctx.strokeText("贵傩戏 · 傩文化数字博物馆", W / 2, W * 0.13);
-    ctx.fillStyle = "#fff";
-    ctx.fillText("贵傩戏 · 傩文化数字博物馆", W / 2, W * 0.13);
-    // 朱文方章
-    const ssz = Math.round(W * 0.085);
+    ctx.drawImage(s.canvas, 0, 0, s.canvas.width, s.canvas.height, MARGIN, MARGIN, PW, PH);
+    ctx.restore();
+    ctx.strokeStyle = "rgba(0,0,0,.12)";
+    ctx.lineWidth = 2;
+    roundRectPath(ctx, MARGIN, MARGIN, PW, PH, 24);
+    ctx.stroke();
+    // 2) 底部标签区: 无衬线双语 + 朱砂方章
+    const SANS = '"PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Helvetica Neue", Arial, sans-serif';
+    ctx.textBaseline = "alphabetic";
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#1A1A1A";
+    ctx.font = `600 ${Math.round(W * 0.059)}px ${SANS}`; // 64px 主标题
+    ctx.fillText("贵傩戏 · 傩文化数字博物馆", MARGIN, MARGIN + PH + W * 0.078);
+    ctx.fillStyle = "#595959";
+    ctx.font = `500 ${Math.round(W * 0.022)}px ${SANS}`; // 24px 英文
+    ctx.fillText("G U I   N U O   O P E R A  ·  D I G I T A L   M U S E U M", MARGIN, MARGIN + PH + W * 0.115);
+    // 朱文方章(右侧, 全卡唯一彩色)
+    const ssz = Math.round(W * 0.081); // 88px
     ctx.save();
-    ctx.translate(W - ssz * 1.6, H - ssz * 2.0);
+    ctx.translate(W - MARGIN - ssz / 2, MARGIN + PH + BOTTOM - ssz * 1.35);
     ctx.rotate(-0.1);
     ctx.fillStyle = "#A31621";
     ctx.fillRect(-ssz / 2, -ssz / 2, ssz, ssz);
+    ctx.strokeStyle = "rgba(255,255,255,.55)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-ssz / 2 + 5, -ssz / 2 + 5, ssz - 10, ssz - 10);
     ctx.fillStyle = "#fff";
-    ctx.font = Math.round(ssz * 0.36) + 'px "Long Cang", serif';
+    ctx.font = `600 ${Math.round(ssz * 0.34)}px ${SANS}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     "傩印".split("").forEach((c, i) => ctx.fillText(c, (i % 2 ? 1 : -1) * ssz * 0.22, (i < 2 ? -1 : 1) * ssz * 0.22));
     ctx.restore();
-    // 日期落款
+    // 日期落款(左对齐双行)
     const d = new Date();
     ctx.textAlign = "left";
-    ctx.textBaseline = "bottom";
-    ctx.font = Math.round(W * 0.024) + 'px "Noto Serif SC", serif';
-    ctx.shadowColor = "rgba(0,0,0,.55)";
-    ctx.shadowBlur = 4;
-    ctx.fillStyle = "rgba(255,255,255,.92)";
-    ctx.fillText("打卡 · " + d.getFullYear() + " 年 " + (d.getMonth() + 1) + " 月 " + d.getDate() + " 日", W * 0.05, H - W * 0.05);
-    ctx.fillText("AR 试戴 · 点云面具", W * 0.05, H - W * 0.09);
-    ctx.shadowBlur = 0;
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = "#595959";
+    ctx.font = `400 ${Math.round(W * 0.02)}px ${SANS}`; // 22px
+    ctx.fillText(`打卡 CHECK-IN · ${d.getFullYear()} 年 ${d.getMonth() + 1} 月 ${d.getDate()} 日`, MARGIN, H - W * 0.045);
+    ctx.fillStyle = "#8A8A8A";
+    ctx.fillText("AR 试戴 · 点云面具 POINT-CLOUD MASK", MARGIN, H - W * 0.021);
     // 4) 导出与分享
     const blob = await new Promise((res) => cv.toBlob(res, "image/jpeg", 0.92));
     cv.width = cv.height = 0;
@@ -704,7 +910,7 @@ async function captureCheckin(s) {
     const file = new File([blob], "nuo-checkin-" + Date.now() + ".jpg", { type: "image/jpeg" });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
-        await navigator.share({ files: [file], text: "贵傩戏数字博物馆 · AR 试戴打卡" });
+        await navigator.share({ files: [file], text: "贵傩戏 GUI NUO OPERA · 傩文化数字博物馆 · AR 试戴打卡" });
         flashTip(s, "已分享 ✓");
         return;
       } catch (e) {
@@ -712,7 +918,7 @@ async function captureCheckin(s) {
       }
     }
     showCheckinPreview(URL.createObjectURL(blob), file.name);
-    flashTip(s, "长按图片可保存");
+    flashTip(s, "长按图片可保存 LONG-PRESS TO SAVE");
   } catch (e) {
     console.warn("[arMask] 打卡失败:", e);
     flashTip(s, "打卡失败: " + (e.message || e));
@@ -727,21 +933,21 @@ function showCheckinPreview(url, name) {
   img.src = url;
   img.alt = "打卡照片(长按保存)";
   const row = makeEl("div", "display:flex;gap:12px");
-  const dl = makeEl("button", "padding:10px 22px;border:1px solid rgba(255,255,255,.4);border-radius:999px;background:rgba(255,255,255,.08);color:#fff;font-size:13px;letter-spacing:2px;cursor:pointer");
+  const dl = makeEl("button", "padding:12px 26px;border:none;border-radius:999px;background:#1A1A1A;color:#fff;font-size:13px;letter-spacing:2px;cursor:pointer");
   dl.type = "button";
-  dl.textContent = "下载";
+  dl.textContent = "下载 DOWNLOAD";
   dl.addEventListener("click", () => {
     const a = document.createElement("a");
     a.href = url;
     a.download = name;
     a.click();
   });
-  const cl = makeEl("button", "padding:10px 22px;border:none;border-radius:999px;background:#A31621;color:#fff;font-size:13px;letter-spacing:2px;cursor:pointer");
+  const cl = makeEl("button", "padding:12px 26px;border:1px solid rgba(255,255,255,.45);border-radius:999px;background:transparent;color:#fff;font-size:13px;letter-spacing:2px;cursor:pointer");
   cl.type = "button";
-  cl.textContent = "关闭";
+  cl.textContent = "关闭 CLOSE";
   cl.addEventListener("click", closeCheckinPreview);
-  const hint = makeEl("p", "color:rgba(255,255,255,.55);font-size:12px;letter-spacing:2px;margin:0");
-  hint.textContent = "移动端长按图片 → 保存/分享";
+  const hint = makeEl("p", "color:rgba(255,255,255,.6);font-size:12px;letter-spacing:2px;margin:0");
+  hint.textContent = "移动端长按图片 → 保存/分享 LONG-PRESS TO SAVE";
   row.append(dl, cl);
   mask.append(img, row, hint);
   document.body.appendChild(mask);
@@ -758,7 +964,7 @@ function closeCheckinPreview() {
 // ---------------- 切换 / 提示 ----------------
 function requestSwitch(delta) {
   if (!session || !session.running) return;
-  flashTip(session, delta > 0 ? "下一个面具 ▸" : "◂ 上一个面具");
+  flashTip(session, delta > 0 ? "下一个 ▸ NEXT" : "◂ 上一个 PREV");
   try {
     window.dispatchEvent(new CustomEvent("ar-mask-switch", { detail: { delta } }));
   } catch (e) {

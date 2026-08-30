@@ -13,8 +13,8 @@ export class Stage {
   constructor(canvas) {
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
-    // 宣纸底:与 --bg-paper #F4F1EA 一致
-    this.renderer.setClearColor(0xf4f1ea, 1);
+    // 纯白展墙:与 --bg-paper #FFFFFF 一致
+    this.renderer.setClearColor(0xffffff, 1);
     this.scene = new THREE.Scene();
     // 相机: fov=45; 展陈弧需要更远机位,_resize 内按视口宽高比自适应
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
@@ -104,11 +104,11 @@ export class Stage {
     });
     composer.addPass(this.edl);
     // 胶片颗粒(灰度) + 暗角 —— 纸面颗粒与陈纸边缘(浅色主题不用 bloom,会洗白墨色)
-    this.film = new FilmPass(0.2, false); // 彩色保留(面具原生色),颗粒为中性噪点
+    this.film = new FilmPass(0.08, false); // 彩色保留(面具原生色),白底颗粒收敛防脏
     composer.addPass(this.film);
     this.vignette = new ShaderPass(VignetteShader);
     this.vignette.uniforms.offset.value = 1.1;
-    this.vignette.uniforms.darkness.value = 0.16;
+    this.vignette.uniforms.darkness.value = 0.05; // 白底只留极浅暗角,灰晕会显脏
     composer.addPass(this.vignette);
     // linear → sRGB 输出(没有它整帧偏暗)
     composer.addPass(new OutputPass());

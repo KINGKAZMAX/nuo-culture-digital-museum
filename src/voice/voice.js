@@ -87,27 +87,28 @@ const CSS = `
   flex-direction: column;
   align-items: flex-end;
   gap: 10px;
-  font-family: 'Kaiti SC', 'STKaiti', 'Noto Serif SC', serif;
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Helvetica Neue', Arial, sans-serif;
   pointer-events: none;
   user-select: none;
 }
 @media (max-width: 900px) {
-  .vg-root { right: 16px; bottom: 16px; }
+  .vg-root { right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); }
 }
 .vg-root * { pointer-events: auto; }
 
 .vg-bubble { position:relative;
   max-width: min(340px, 72vw);
+  max-height: 42vh;
+  overflow-y: auto;
   padding: 10px 14px;
-  background: rgba(18, 10, 6, 0.82);
-  border: 1px solid ${GOLD_DIM};
+  background: rgba(26, 26, 26, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 12px;
   color: #efefef;
   font-size: 13px;
   line-height: 1.7;
   letter-spacing: 0.5px;
-  text-shadow: 0 0 6px rgba(217, 176, 108, 0.35);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
   opacity: 0;
   transform: translateY(6px);
   transition: opacity 0.35s ease, transform 0.35s ease;
