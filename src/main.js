@@ -14,7 +14,7 @@ const defaultCfg = {
   title: "贵傩戏-傩文化数字博物馆",
   sideEn: "NUO CULTURE DIGITAL MUSEUM",
   sideZh: "民俗 · 仪式 · 戏面",
-  font: "Liu Jian Mao Cao",
+  font: "Long Cang",
   titleSize: 176,
   color: "#141414",
   textVisible: true,
@@ -139,15 +139,23 @@ async function main() {
       $("hudGesture").textContent = `手势：${name === "--" ? "--" : name + " " + (score).toFixed(2)}`;
     },
   });
-  hand._onMaskSwitch = (idx) => switchTo(idx);
+  // AR 打开时切换走 ar-switch -> ar-mask-switch 事件路径, 这里直接切会造成一次手势切两步
+  hand._onMaskSwitch = (idx) => {
+    if (window.__arMask?.isOn?.()) return;
+    switchTo(idx);
+  };
   hand.modLength = defs.length;
 
   bindUI();
   bindEditableText();
   updateExhibitUI(0);
 
-  introStatus.textContent = "初始化手势引擎…";
-  await hand.init((s) => (introStatus.textContent = s));
+  introStatus.textContent = "正在唤醒馆藏…";
+  try {
+    await hand.init((s) => (introStatus.textContent = s));
+  } catch (e) {
+    console.warn("手势引擎不可用,以鼠标模式继续", e);
+  }
 
   // 入口:黑白画廊展示全部傩面具,点击展品入馆
   buildIntroGallery(thumbs);
@@ -158,6 +166,48 @@ async function main() {
   }
   $("hudTip").textContent = "五面同屏 · 单击/捏合转台换展品 · 拖拽旋转 · 滚轮缩放 · 握拳爆散 · 双击文字可编辑";
 }
+
+// ---------- 三步渐进引导 ----------
+const guideSteps = [
+  "拖动画面（或对镜头移动手掌），转动面具看看",
+  "单击画面（或对镜头捏合手指），换下一件展品",
+  "对镜头握拳，看它散成星尘 · 右下角麦克风可语音提问",
+];
+let guideIdx = -1;
+function guideAdvance() {
+  guideIdx++;
+  const el = $("guideTip");
+  if (!el) return;
+  if (guideIdx >= guideSteps.length) { el.classList.remove("show"); return; }
+  el.textContent = guideSteps[guideIdx];
+  el.classList.add("show");
+  clearTimeout(guideAdvance._t);
+  guideAdvance._t = setTimeout(guideAdvance, 7000); // 超时自动进下一步
+}
+(function initGuideTip() {
+  const el = document.createElement("div");
+  el.id = "guideTip";
+  el.style.cssText = "position:fixed;left:50%;transform:translateX(-50%);bottom:calc(34px + env(safe-area-inset-bottom));z-index:45;font-family:'Noto Serif SC',serif;font-size:13px;letter-spacing:2px;color:#c9c6bd;background:rgba(10,10,10,.72);padding:8px 18px;border-radius:2px;border-bottom:1px solid rgba(232,229,222,.35);opacity:0;transition:opacity .5s;pointer-events:none;max-width:86vw;text-align:center;";
+  document.body.appendChild(el);
+})();
+// 入馆后启动引导;对应操作发生时快进
+window.addEventListener("guide-start", guideAdvance);
+
+// ---------- AR 面具事件接线 ----------
+window.addEventListener("ar-mask-switch", (e) => {
+  switchTo(currentModelIndex + (e.detail?.delta ?? 1));
+});
+
+// ---------- AR 面具数据钩子(五官绑定用) ----------
+window.__getMaskCloud = function () {
+  const st = window.__stage;
+  const m = st?.current ?? st?.models?.[st.focusIdx ?? 0];
+  if (!m) return null;
+  const pos = m.points.geometry.getAttribute("position");
+  const col = m.points.geometry.getAttribute("color");
+  if (!pos || !col) return null;
+  return { positions: pos.array, colors: col.array, count: pos.count };
+};
 
 // ---------- 入口画廊 ----------
 function buildIntroGallery(thumbs) {
@@ -176,7 +226,7 @@ function buildIntroGallery(thumbs) {
     img.src = thumbs[i] ?? "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
     const name = document.createElement("span");
     name.className = "mc-name";
-    name.textContent = d.name;
+    name.textContent = d.label ?? d.name;
     card.append(no, img, name);
     card.addEventListener("click", () => enterHall(i, { welcome: true }));
     g.appendChild(card);
@@ -189,15 +239,51 @@ function buildIntroGallery(thumbs) {
 function enterHall(idx, { welcome }) {
   $("intro").classList.add("hide");
   if (idx !== currentModelIndex) switchTo(idx);
-  // 向导 agent 主动问候(点击即用户手势,音频策略允许播放)
+  window.dispatchEvent(new Event("guide-start"));
+  // 向导语音助手自动启动 + 主动问候(点击即用户手势)
   if (welcome) {
     import("./voice/voice.js")
       .then((m) => m.initVoiceGuide())
       .then(() => {
         setTimeout(() => window.__voiceGuide?.play?.("welcome_agent"), 600);
+        // 欢迎语结束后自动开始傩文化讲解(文字+语音循环)
+        setTimeout(startAutoTour, 16000);
       })
       .catch(() => {});
   }
+  // 摄像头自动启动(手势交互开箱即用;拒绝授权则静默观展)
+  setTimeout(() => {
+    const cb = $("camEnabled");
+    if (cb && !cb.checked) {
+      cb.checked = true;
+      cb.dispatchEvent(new Event("change"));
+    }
+  }, 800);
+  // AR 面具试戴模块自动装载(按钮出现在右下)
+  import("./arMask.js")
+    .then((m) => m.initARMask())
+    .catch((e) => console.warn("AR 模块不可用", e));
+}
+
+// ---------- 自动讲解: 傩文化图文轮播(向导语音随行) ----------
+let autoTourTimer = null;
+const TOUR_IDS = ["what_is_nuo", "mask_origin", "mask_colors", "guizhou_nuo", "nuo_opera_dance"];
+let tourIdx = 0;
+function startAutoTour() {
+  if (autoTourTimer) return;
+  autoTourTimer = setInterval(() => {
+    if (window.__voiceGuide?.state === "speaking" || window.__voiceGuide?.state === "listening") return;
+    const id = TOUR_IDS[tourIdx % TOUR_IDS.length];
+    tourIdx++;
+    const vg = window.__voiceGuide;
+    if (vg?.play?.(id)) return;
+  }, 24000); // 每 24 秒一条(讲解约 19-21s + 呼吸间隔)
+  window.__autoTour = true;
+}
+function stopAutoTour() {
+  clearInterval(autoTourTimer);
+  autoTourTimer = null;
+  window.__autoTour = false;
 }
 
 // 顶栏展品编号/名称 + 底栏页码/刻度联动
@@ -208,7 +294,7 @@ function updateExhibitUI(idx) {
   const noEl = document.querySelector(".exhibit-no");
   const nameEl = document.querySelector(".exhibit-name");
   if (noEl) noEl.textContent = no;
-  if (nameEl) nameEl.textContent = def.name;
+  if (nameEl) nameEl.textContent = def.label ?? def.name;
   const b = document.querySelector(".pager-num b");
   const total = document.querySelectorAll(".pager-num span")[1];
   if (b) b.textContent = no;
@@ -216,7 +302,7 @@ function updateExhibitUI(idx) {
   document.querySelectorAll(".pager-seg").forEach((seg, i) => {
     seg.classList.toggle("is-current", i === idx);
   });
-  $("hudModel").textContent = `展品 ${def.name} · ${idx + 1} / ${defs.length}`;
+  $("hudModel").textContent = `展品 ${def.label ?? def.name} · ${idx + 1} / ${defs.length}`;
 }
 
 async function ensureGeometry(def) {
@@ -244,11 +330,14 @@ async function switchTo(idx) {
   currentModelIndex = idx;
   stage.focusIndex(idx);
   updateExhibitUI(idx);
+  // 手势计数器与显示索引保持同步(键盘/单击/列表切换后捏合不错位)
+  if (hand) hand.state.maskIndex = idx;
+  if (guideIdx === 1) guideAdvance(); // 已完成第2步(切换),进入第3步
 }
 
-// 馆藏变化(上传/删除)后重建弧形陈列
-function rebuildGallery() {
-  const geos = defs.map((d) => geoCache.get(d.key) ?? null);
+// 馆藏变化(上传/删除)后重建弧形陈列(缺失/被淘汰的几何重新加载)
+async function rebuildGallery() {
+  const geos = await Promise.all(defs.map((d) => ensureGeometry(d).catch(() => null)));
   stage.showAllModels(defs, geos);
   stage.focusIndex(currentModelIndex);
   renderModelList();
@@ -285,6 +374,7 @@ function drawHandView() {
 // ---------- 主循环 ----------
 // 用户拖拽旋转(叠加在手势/自转之上) + 惯性
 const userRot = { rx: 0, ry: 0, vx: 0, vy: 0 };
+let spinAngle = 0; // 自转积分(与 handControl 摄像头路径各自的积分器)
 let lastT = performance.now();
 // 自适应画质(借 drei PerformanceMonitor 算法思路): FPS 跌破阈值阶梯降 DPR
 const perfMon = { avg: 60, samples: 0, level: 0, lastChange: 0 };
@@ -322,8 +412,9 @@ function tick() {
     stage.setZoom(hand.getZoom());
     stage.update(dt, { rx: rot.rx + userRot.rx, ry: rot.ry + userRot.ry });
   } else {
-    // 无手状态也保持自转
-    stage.update(dt, { rx: userRot.rx, ry: (performance.now() / 1000) * THREE_D2R * (cfg.spinSpeed ?? 12) + userRot.ry });
+    // 无手状态也保持自转(积分器,避免调速度/暂停瞬间跳变)
+    spinAngle += (cfg.spinSpeed ?? 12) * THREE_D2R * dt;
+    stage.update(dt, { rx: userRot.rx, ry: spinAngle + userRot.ry });
   }
   drawHandView();
   requestAnimationFrame(tick);
@@ -442,8 +533,10 @@ function bindUI() {
   window.addEventListener("keydown", onceGesture);
 
   // ---------- 摄像头(设置面板开关) ----------
+  let cameraStarting = false;
   async function startCamera() {
-    if (hand?.running) return;
+    if (hand?.running || cameraStarting) return;
+    cameraStarting = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -455,11 +548,14 @@ function bindUI() {
       video.playsInline = true;
       await video.play();
       hand.video = video;
+      window.__handVideo = video; // AR 模块复用此流(R6: iOS 单流限制)
       await hand.start(video);
       $("hudGesture").textContent = "手势：已开启";
     } catch (e) {
       $("camEnabled").checked = false;
       $("hudGesture").textContent = "摄像头不可用: " + e.message;
+    } finally {
+      cameraStarting = false;
     }
   }
   function stopCamera() {

@@ -7,7 +7,8 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🎭</text></svg>" />
   <!-- 离线字体预加载（href 与 main.js injectFontCss 完全一致，JS 会自动去重）：
        草书主标题 + 宋体衬线；其余字体由 JS 在用户切换时按需注入 -->
-  <link rel="stylesheet" href="./fonts/liu-jian-mao-cao/index.css" />
+  <link rel="stylesheet" href="./fonts/long-cang/index.css" />
+    <link rel="stylesheet" href="./fonts/liu-jian-mao-cao/index.css" />
   <link rel="stylesheet" href="./fonts/noto-serif-sc/400.css" />
   <link rel="stylesheet" href="/src/style.css" />
 </head>
@@ -115,16 +116,16 @@ MASK</div>
       <label class="row"><span>中文副题</span><input type="text" id="cfgSideZh" value="民俗 · 仪式 · 戏面" /></label>
       <label class="row"><span>字体</span>
         <select id="cfgFont">
+          <option value="Long Cang">龙藏行书</option>
           <option value="Liu Jian Mao Cao">刘建军毛草（草书）</option>
           <option value="Zhi Mang Xing">志莽行书</option>
-          <option value="Long Cang">龙藏行书</option>
           <option value="Ma Shan Zheng">马善政毛笔楷</option>
           <option value="ZCOOL XiaoWei">站酷小薇</option>
           <option value="Noto Serif SC">思源宋体</option>
           <option value="Kaiti SC, STKaiti, KaiTi">楷体（系统）</option>
         </select>
       </label>
-      <label class="row"><span>标题字号</span><input type="range" id="cfgTitleSize" min="60" max="320" step="2" value="220" /><b id="cfgTitleSizeV">120</b></label>
+      <label class="row"><span>标题字号</span><input type="range" id="cfgTitleSize" min="40" max="220" step="2" value="100" /><b id="cfgTitleSizeV">120</b></label>
       <label class="row"><span>标题颜色</span><input type="color" id="cfgColor" value="#f2f2f2" /></label>
       <label class="row"><span>显示文案</span><input type="checkbox" id="cfgTextVisible" checked /></label>
     </section>

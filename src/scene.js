@@ -186,9 +186,10 @@ export class Stage {
 
   // ---------- 全量弧形陈列(水墨展厅主模式) ----------
   showAllModels(defs, geos) {
-    // 清旧
+    // 清旧(释放材质;几何为共享缓存不释放)
     for (const m of this.models ?? []) {
       this.maskRoot.remove(m.points);
+      m.points.material.dispose();
     }
     this.models = [];
     this.current = null;

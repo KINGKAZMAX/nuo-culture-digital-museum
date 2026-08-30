@@ -96,7 +96,7 @@ const CSS = `
 }
 .vg-root * { pointer-events: auto; }
 
-.vg-bubble {
+.vg-bubble { position:relative;
   max-width: min(340px, 72vw);
   padding: 10px 14px;
   background: rgba(18, 10, 6, 0.82);
@@ -248,10 +248,28 @@ export function initVoiceGuide() {
     }
   }
 
-  function setBubble(text, question, sticky) {
+  function setBubble(text, question, sticky, skippable) {
     clearTimeout(textTimer);
-    bubble.innerHTML = (question ? `<span class="vg-q">您问：${escapeHtml(question)}</span>` : '') + escapeHtml(text);
+    const skip = skippable
+      ? '<button class="vg-skip" aria-label="跳过讲解" title="跳过">✕</button>'
+      : '';
+    bubble.innerHTML = (question ? `<span class="vg-q">您问：${escapeHtml(question)}</span>` : '') + escapeHtml(text) + skip;
     bubble.classList.add('vg-show');
+    const skipBtn = bubble.querySelector('.vg-skip');
+    if (skipBtn) {
+      skipBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (audio) {
+          audio.onended = null;
+          audio.onerror = null;
+          duckBgm(false);
+          try { audio.pause(); } catch { /* 忽略 */ }
+        }
+        hideBubble();
+        if (sessionActive) startListening();
+        else setState(STATE.IDLE);
+      });
+    }
     if (!sticky) {
       textTimer = setTimeout(() => bubble.classList.remove('vg-show'), TEXT_SHOW_MS);
     }
@@ -280,17 +298,39 @@ export function initVoiceGuide() {
     } catch { /* 忽略 */ }
   }
 
+  function duckBgm(on) {
+    const bgm = window.__bgm;
+    if (!bgm) return;
+    try {
+      if (on) {
+        bgm._savedVol = bgm.volume;
+        bgm.volume = Math.min(bgm.volume, 0.07);
+      } else if (bgm._savedVol !== undefined) {
+        bgm.volume = bgm._savedVol;
+        delete bgm._savedVol;
+      }
+    } catch { /* 忽略 */ }
+  }
+
   function playEntry(entry, question) {
     try {
-      if (audio) { audio.pause(); audio.src = ''; } // 打断上一条
+      if (audio) {
+        // 先摘回调再清 src: 防 error 异步派发穿透到 done() 重开麦克风(自听自答)
+        audio.onended = null;
+        audio.onerror = null;
+        audio.pause();
+        audio.src = '';
+      }
+      duckBgm(true);
       audio = new Audio(audioUrl(entry.id));
       audio.play().catch(() => { /* 播放失败时至少保留文本 */ });
 
       setState(STATE.SPEAKING);
-      setBubble(entry.answer, question, false);
+      setBubble(entry.answer, question, true, true);
 
       const done = () => {
         if (state !== STATE.SPEAKING) return;
+        duckBgm(false);
         if (sessionActive) startListening();
         else setState(STATE.IDLE);
       };

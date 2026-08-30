@@ -18,7 +18,7 @@
   --seal-red: #A31621;            /* 全站唯一彩色 */
   --seal-red-hover: #C02030;
   --gold: #141414;                /* 兼容位：main.js 以 cfg.color 覆盖（默认墨色） */
-  --font-cursive: "Liu Jian Mao Cao", "Kaiti SC", "STKaiti", "KaiTi", serif;
+  --font-cursive: "Long Cang", "Liu Jian Mao Cao", "Kaiti SC", "STKaiti", "KaiTi", serif;
   --font-serif: "Noto Serif SC", Georgia, "Times New Roman", "Songti SC", serif;
   --font-num: Georgia, "Times New Roman", "Noto Serif SC", serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
@@ -624,6 +624,32 @@ button:focus-visible, select:focus-visible { outline: 1px solid var(--ink-45); o
   color: var(--ink-45);
   letter-spacing: .32em;
   margin-top: 3.4vmin;
+}
+
+/* ---------- 手机适配(≤720px 竖屏优先) ---------- */
+@media (max-width: 720px) {
+  .topbar { padding: 10px 14px 8px; }
+  .exhibit-no { font-size: 20px; }
+  .exhibit-name { font-size: 15px; letter-spacing: 4px; }
+  .topbar-nav { gap: 14px; font-size: 11px; }
+  .hud { top: 52px; right: 12px; gap: 4px; font-size: 10px; }
+  .hud-tip { display: none !important; }
+  /* 左侧大标题: 缩小并下移避让顶栏,不挡 UI */
+  .title-block { left: 10px; top: 84px; }
+  .title-text { font-size: 6.4vmin !important; letter-spacing: .06em; }
+  .seal { width: 34px; height: 34px; font-size: 19px; }
+  .side-block { right: 10px; bottom: 86px; }
+  .side-zh { font-size: 11px; letter-spacing: 6px; }
+  .side-en { font-size: 9px; }
+  .exhibit-tag { left: 10px; bottom: 150px; max-width: 42vw; }
+  .tag-meta { font-size: 8.5px; }
+  .pager { bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .pager-num { font-size: 13px; }
+  .hand-view { width: 96px; height: 96px; left: 8px; bottom: 8px; }
+  /* 设置面板: 全宽抽屉 */
+  .panel { width: 100%; max-width: 100%; }
+  .intro-title { font-size: 12vw; }
+  .intro-inner { max-width: 94vw; }
 }
 
 @media (prefers-reduced-motion: reduce) {

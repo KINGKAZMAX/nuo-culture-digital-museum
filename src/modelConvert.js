@@ -12,7 +12,11 @@ export function parsePLY(buffer, targetCount = 640000) {
   const headText = new TextDecoder("latin1").decode(buf.subarray(0, 8192));
   const endIdx = headText.indexOf("end_header");
   if (!headText.startsWith("ply") || endIdx < 0) throw new Error("不是有效的 PLY 文件");
-  const header = headText.slice(0, endIdx + 10);
+  // dataStart 必须跳过 end_header 后的换行(CRLF 计 2 字节),否则二进制体整体错位
+  let headerEnd = endIdx + 10;
+  if (headText[headerEnd] === "\r") headerEnd += 1;
+  if (headText[headerEnd] === "\n") headerEnd += 1;
+  const header = headText.slice(0, headerEnd);
   const lines = header.split(/\r?\n/);
   const fmtLine = lines.find((l) => l.startsWith("format")) ?? "";
   const ascii = fmtLine.includes("ascii");
