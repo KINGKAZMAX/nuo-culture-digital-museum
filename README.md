@@ -8,7 +8,7 @@ Nuo Culture Digital Museum · Digital Exhibition & Interactive Experience
 
 <img src="docs/images/poster/hero-banner.jpg" alt="贵傩戏 · 傩文化数字博物馆 主视觉" width="880">
 
-贵州傩戏面具的三维点云数字展馆 —— 纯浏览器运行，裸手手势交互，AR 试戴与打卡分享
+贵州傩戏面具的三维点云数字展馆 —— 纯浏览器运行，裸手手势交互，AR 试戴与打卡分享，白/黑双主题展厅
 
 **[在线体验](https://kingkazmax.github.io/nuo-culture-digital-museum/)** · [交互说明](docs/交互说明.md) · [性能与资产](docs/性能与资产.md)
 
@@ -60,8 +60,12 @@ Nuo Culture Digital Museum · Digital Exhibition & Interactive Experience
 |:---:|:---:|:---:|:---:|
 | ![馆藏画廊](docs/images/web/desktop-gallery.jpg) | ![展厅观展](docs/images/web/desktop-hall.jpg) | ![AR 试戴](docs/images/web/desktop-ar.png) | ![打卡海报](docs/images/web/desktop-checkin.png) |
 
+| 黑色空间展厅（夜 NIGHT） | 展品详情卡 |
+|:---:|:---:|
+| ![黑色空间展厅](docs/images/web/dark-hall.jpg) | ![详情卡](docs/images/web/dark-hall.jpg) |
+
 - **馆藏画廊**：五面傩面缩略图陈列，点击进馆
-- **展厅观展**：纯白展厅 + 彩色点云面具 + 中英双语铭牌 + 底栏进度刻度
+- **展厅观展**：纯白 / 黑色空间双主题展厅（「夜 NIGHT / 昼 DAY」一键切换）+ 彩色点云面具 + 中英双语铭牌 + 展品详情卡
 - **AR 试戴**：24,000 抽样点实时附着人脸，额头至下巴全覆盖，One Euro 滤波平滑跟随
 - **打卡海报**：白卡版式（视频帧 + 面具层圆角内嵌），无衬线中英双语标签 + 朱砂傩印 + 日期，一键分享或保存
 
@@ -82,9 +86,11 @@ Nuo Culture Digital Museum · Digital Exhibition & Interactive Experience
 | 切换展品 | 单击画面 | **挥手** / **捏合** | 立即切换上一件 / 下一件，无过渡 |
 | 缩放 | 滚轮 / 双指 | 双手拉距 | 0.45–2.6 倍视野缩放 |
 | 爆散星尘 | — | **握拳** | 傩面爆散为星尘云雾，松手回聚 |
+| 展品详情 | 「详 情 INFO」按钮 | **VICTORY** | 展品剧种档案卡 |
+| 点赞 | — | **THUMB UP** | 星尘脉冲反馈 |
 | 编辑展签 | 双击画面文字 | — | 就地修改标题与副题，失焦保存 |
 
-无操作时藏品以默认速度缓慢自转；摄像头为可选项，可在设置面板开启。
+无操作时藏品缓慢自转；键盘 ←/→ 切换、数字键直达、空格暂停；底栏刻度可点击直达。摄像头为可选项，可在设置面板开启。
 
 ### AR 试戴与打卡
 
@@ -98,8 +104,8 @@ Nuo Culture Digital Museum · Digital Exhibition & Interactive Experience
 
 ### 语音向导
 
-- 入馆自动播放欢迎语，随后每 24 秒自动轮播傩文化讲解（共 5 讲：什么是傩 / 面具起源 / 面具色彩 / 贵州傩戏 / 傩舞傩戏）
-- 点击麦克风按钮说出问题，匹配 17 主题知识库播放对应讲解，识别与播放全程本地完成
+- 入馆自动播放欢迎语，随后每 24 秒自动轮播傩文化讲解（傩的起源 / 面具起源 / 面具色彩 / 贵州傩戏 / 傩舞傩戏）
+- 点击麦克风按钮说出问题，匹配 34 主题知识库播放对应讲解，识别与播放全程本地完成
 - 讲解播放时背景音乐自动压低（ducking），右上角可跳过
 
 完整手势参数、状态机与设置面板说明见 **[docs/交互说明.md](docs/交互说明.md)**。

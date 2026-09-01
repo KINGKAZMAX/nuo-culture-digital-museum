@@ -14,7 +14,9 @@ export class Stage {
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
     // 纯白展墙:与 --bg-paper #FFFFFF 一致
-    this.renderer.setClearColor(0xffffff, 1);
+    // 清屏色: OutputPass 会把 RT 里的线性值再提亮到 sRGB, 故预补偿为线性等效值
+    // (0x010102 线性 → 输出 ≈ #0A0A0C sRGB; 白色 1.0 不受影响)
+    this.renderer.setClearColor(0x010102, 1); // setTheme() 会按主题切换
     this.scene = new THREE.Scene();
     // 相机: fov=45; 展陈弧需要更远机位,_resize 内按视口宽高比自适应
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
@@ -125,7 +127,9 @@ export class Stage {
     this.camera.position.y = 0.35;
     this.camera.lookAt(0, 0, 0);
     this.camera.updateProjectionMatrix();
-    const pr = this._targetPR ?? Math.min(window.devicePixelRatio, 2);
+    // DPR: 桌面精细指针设备 2.5(点云更锐), 移动/触屏 2
+    const prCap = window.matchMedia?.('(pointer: coarse)').matches ? 2 : 2.5;
+    const pr = this._targetPR ?? Math.min(window.devicePixelRatio, prCap);
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h);
     this.composer.setPixelRatio(pr);
@@ -157,6 +161,7 @@ export class Stage {
   _makePoints(geometry, def, opts = {}) {
     // 水墨展厅: 单层无光晕,墨色着色
     const mat = makePointsMaterial({ pointSize: this.params.pointSize, ink: opts.ink === true });
+    if (this.themeMode === "dark" && mat.uniforms.uExposure) mat.uniforms.uExposure.value = 1.18; // 后载面具跟随主题
     const points = new THREE.Points(geometry, mat);
     const s = def.baseScale ?? 1;
     points.scale.setScalar(s);
@@ -224,6 +229,8 @@ export class Stage {
     let d = (desired - this.carouselTarget) % (Math.PI * 2);
     if (d > Math.PI) d -= Math.PI * 2;
     if (d < -Math.PI) d += Math.PI * 2;
+    // 定长缓动补间(专业运镜): easeInOutCubic 1.0s, 中途重定向从当前值续走
+    this._tween = { from: this.carouselTheta, to: this.carouselTarget + d, t0: performance.now(), dur: 1000 };
     this.carouselTarget += d;
   }
 
@@ -272,6 +279,24 @@ export class Stage {
   }
 
   // ---------- 缩放(滚轮/双指捏合/双手拉距) ----------
+  // ---------- 主题(纯白展厅 / 黑色空间展厅) ----------
+  setTheme(mode) {
+    const dark = mode === "dark";
+    this.renderer.setClearColor(dark ? 0x010102 : 0xffffff, 1);
+    if (this.film?.uniforms?.amount) this.film.uniforms.amount.value = dark ? 0.05 : 0.08; // 黑底颗粒=提亮噪点, 收敛
+    // VignetteShader/Film 在线性缓冲工作: 黑底开 vignette 会把边缘抬成中灰(linear 1-darkness),
+    // 黑主题两 pass 直接停用(深空本无颗粒与暗角), 白主题保持原参数
+    if (this.vignette) this.vignette.enabled = !dark;
+    if (this.film) this.film.enabled = !dark;
+    if (this.edl?.uniforms?.uStrength) this.edl.uniforms.uStrength.value = dark ? 0.28 : 0.55; // 黑底 EDL 会沉底, 降强度
+    for (const m of this._allMaskEntries()) {
+      for (const p of [m.points, ...(m.ghosts ?? [])]) {
+        if (p.material.uniforms.uExposure) p.material.uniforms.uExposure.value = dark ? 1.18 : 1.0; // 黑底点云提亮
+      }
+    }
+    this.themeMode = mode;
+  }
+
   setZoom(z) {
     this.zoom = Math.min(2.6, Math.max(0.45, z));
     this.maskRoot.scale.setScalar(this.zoom);
@@ -281,8 +306,15 @@ export class Stage {
   // ---------- 每帧 ----------
   update(dt, rot) {
     const t = performance.now() / 1000;
-    // 转盘角平滑趋近目标
-    this.carouselTheta += (this.carouselTarget - this.carouselTheta) * Math.min(1, dt * 3.4);
+    // 转盘角: 定长 easeInOutCubic 补间(专业运镜曲线)
+    if (this._tween) {
+      const k = Math.min(1, (performance.now() - this._tween.t0) / this._tween.dur);
+      const e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+      this.carouselTheta = this._tween.from + (this._tween.to - this._tween.from) * e;
+      if (k >= 1) this._tween = null;
+    } else {
+      this.carouselTheta += (this.carouselTarget - this.carouselTheta) * Math.min(1, dt * 3.4);
+    }
     // 面具旋转: rx/ry 由手势/拖拽驱动, 自动自转叠加在 ry, 转盘角叠加
     this.maskRoot.rotation.order = "ZXY";
     this.maskRoot.rotation.x = rot.rx * 0.6; // 弧形陈列俯仰减半,避免翻转整个展台

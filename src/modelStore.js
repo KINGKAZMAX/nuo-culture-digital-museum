@@ -30,6 +30,8 @@ export class ModelStore {
         label: LABELS[name]?.[0],
         labelEn: LABELS[name]?.[1],
         tagline: LABELS[name]?.[2],
+        era: info.era ?? "",
+        desc: info.desc ?? "",
       });
     }
   }

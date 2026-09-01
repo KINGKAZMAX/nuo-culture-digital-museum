@@ -140,10 +140,10 @@ export class HandControl {
           // 连续两个窗口同向才确认: 单帧跳变(手 ID 切换/噪声)不触发
           const prev = this._swipePrevDx ?? 0;
           this._swipePrevDx = dxs;
-          if (ready && trusted && near && Math.abs(prev) > 0.04 && Math.sign(prev) === Math.sign(dxs) && (this._swipeLock ?? 0) < tNow && (this._lastPalmT ?? -9) > now - 0.9) {
+          if (ready && trusted && near && Math.abs(prev) > 0.04 && Math.sign(prev) === Math.sign(dxs) && (this._swipeLock ?? 0) < tNow && (this._lastPalmT ?? -9) > now - 0.9 && (this._trigLock ?? 0) < now) {
             const dir = dxs > 0 ? -1 : 1; // 手向左挥 -> 下一件
             this._swipeX = wxNow; this._swipeT = tNow;
-            this._swipeLock = tNow + 0.7;
+            this._swipeLock = tNow + 0.7; this._trigLock = tNow + 0.8;
             this._swipePrevDx = 0;
             this._trigText = `SWIPE${dir > 0 ? "▸" : "◂"}`;
             this._trigT = tNow;
@@ -186,10 +186,28 @@ export class HandControl {
       this._pinchHold = pinch < this.cfg.pinchEnter ? (this._pinchHold ?? 0) + 1 : 0; // 捏合需持续~3帧才确认
       this._openHold = pinch > this.cfg.pinchExit ? (this._openHold ?? 0) + 1 : 0;   // 武装需先持续~5帧张开
       if (gestureName === "Open_Palm") this._lastPalmT = now; // 真实手才会被稳定标注张开; 幻觉紧凑手没有
+      // 新手势: Victory=详情卡开合 / Thumb_Up=点赞(沿用四件套防误触)
+      const gsc = (res.gestures?.[0]?.[0]?.score) ?? 0;
+      const gq = trusted && near; // 远处/低质不攒帧(防移近即触发)
+      if (gq && gestureName === "Victory" && gsc >= 0.8) this._vicHold = (this._vicHold ?? 0) + 1; else this._vicHold = 0;
+      if (gq && gestureName === "Thumb_Up" && gsc >= 0.85) this._thumbHold = (this._thumbHold ?? 0) + 1; else this._thumbHold = 0;
+      const trigFree = (this._trigLock ?? 0) < now; // 全局仲裁: 任一路触发后其余路静默
+      if (ready && trusted && near && trigFree && (this._lastPalmT ?? -9) > now - 1.0
+          && this._vicHold >= 5 && now - (this._vicT ?? -9) > 1.5) {
+        this._vicT = now; this._vicHold = 0; this._trigLock = now + 0.8; this._swipeLock = now + 0.6;
+        this._trigText = "VICTORY 详情"; this._trigT = now;
+        window.dispatchEvent(new CustomEvent("detail-toggle"));
+      }
+      if (ready && trusted && near && trigFree && (this._lastPalmT ?? -9) > now - 1.0
+          && this._thumbHold >= 6 && now - (this._thumbT ?? -9) > 2.5) {
+        this._thumbT = now; this._thumbHold = 0; this._trigLock = now + 0.8; this._swipeLock = now + 0.6;
+        this._trigText = "THUMB UP +1"; this._trigT = now;
+        st.disp = Math.max(st.disp ?? 0, 0.55); // 快速星尘脉冲作点赞反馈
+      }
       if (fistScore < 0.4 && ready && trusted && near) {
-        if (st.pinchArmed && pinch < this.cfg.pinchEnter && this._pinchHold >= 3 && (this._swipeLock ?? 0) < now && (this._lastPalmT ?? -9) > now - 0.7) {
+        if (st.pinchArmed && pinch < this.cfg.pinchEnter && this._pinchHold >= 3 && (this._swipeLock ?? 0) < now && (this._lastPalmT ?? -9) > now - 0.7 && (this._trigLock ?? 0) < now) {
           st.pinchArmed = false;
-          this._swipeLock = now + 0.6; // 触发后冷却, 防检测闪烁连环切
+          this._swipeLock = now + 0.6; this._trigLock = now + 0.8; // 触发后冷却+全局仲裁, 防检测闪烁连环切
           this._trigText = `PINCH p${(pinch * 100) | 0}`;
           this._trigT = now;
           st.maskIndex = (st.maskIndex + 1) % this.modLength;
@@ -220,11 +238,13 @@ export class HandControl {
       this._pinchHold = 0;
       this._openHold = 0;
       this._lastPalmT = -9;
+      this._vicHold = 0; this._thumbHold = 0; // 连帧契约跨丢失无效
+      this._swipeX = undefined; this._swipePrevDx = 0; // 滑动双窗口不可跨丢失拼接
       // 手离开:爆散缓慢回落,旋转回到自转
       st.disp = damp(st.disp, 0, this.cfg.dispTau, dt);
       st.ryTarget = undefined;
       st.rxTarget = undefined;
-      this.hudGesture?.("--", 0);
+      this.hudGesture?.(this._trigText || "--", 0);
     }
 
     // ---- 自转积分(基础速度 21°/s 积分) ----

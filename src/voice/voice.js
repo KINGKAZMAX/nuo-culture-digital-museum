@@ -305,9 +305,12 @@ export function initVoiceGuide() {
     try {
       if (on) {
         bgm._savedVol = bgm.volume;
-        bgm.volume = Math.min(bgm.volume, 0.07);
+        if (window.__fadeBgm) window.__fadeBgm(Math.min(bgm.volume, 0.07), 250);
+        else bgm.volume = Math.min(bgm.volume, 0.07);
       } else if (bgm._savedVol !== undefined) {
-        bgm.volume = bgm._savedVol;
+        const back = window.__musicBaseVol?.() ?? bgm._savedVol;
+        if (window.__fadeBgm) window.__fadeBgm(back, 500);
+        else bgm.volume = back;
         delete bgm._savedVol;
       }
     } catch { /* 忽略 */ }

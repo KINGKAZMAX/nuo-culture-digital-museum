@@ -4,6 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>贵傩戏 GUI NUO OPERA · 傩文化数字博物馆 | 贵州傩戏非遗面具 · 点云 · AR 试戴</title>
+  <script>
+    // 首绘前应用已存主题(防暗色用户白闪)
+    try {
+      var c = JSON.parse(localStorage.getItem("nuo-mask-cfg-v4") || "{}");
+      if (c.theme === "dark") document.documentElement.dataset.theme = "dark";
+    } catch (e) {}
+  </script>
   <meta name="description" content="贵傩戏 GUI NUO OPERA · 傩文化数字博物馆：65,536 点云呈现五件贵州傩面具非遗珍品，支持 AR 试戴、手势交互与语音讲解。Nuo Culture Digital Museum — Guizhou Nuo Opera masks with AR try-on." />
   <meta name="keywords" content="傩戏, 傩文化, 贵州傩戏, 傩面具, 傩堂戏, 非物质文化遗产, 数字博物馆, 贵傩戏, 点云, AR试戴, Nuo Opera, Nuo Mask, Guizhou, Intangible Cultural Heritage, Digital Museum, AR Try-on" />
   <meta property="og:title" content="贵傩戏 GUI NUO OPERA · 傩文化数字博物馆" />
@@ -11,6 +18,7 @@
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="贵傩戏 · GUI NUO OPERA" />
   <meta property="og:url" content="https://kingkazmax.github.io/nuo-culture-digital-museum/" />
+  <meta property="og:image" content="https://kingkazmax.github.io/nuo-culture-digital-museum/docs/images/poster/hero-banner.jpg" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🎭</text></svg>" />
   <!-- 无衬线体系走系统字体栈,零下载;书法/宋体仅在设置面板选用时按需注入 -->
   <link rel="stylesheet" href="/src/style.css" />
@@ -28,7 +36,9 @@
       <span class="exhibit-en">NUO MASK</span>
     </div>
     <nav class="topbar-nav">
+      <button id="themeBtn" class="topbar-link" title="切换展厅主题(夜/昼)">夜 NIGHT</button>
       <span class="topbar-link is-static">馆藏<span class="topbar-en">COLLECTION</span></span>
+      <button id="infoBtn" class="topbar-link" title="展品详情">详 情<span class="topbar-en">INFO</span></button>
       <button id="gearBtn" class="topbar-link gear-btn" title="设置">设 置<span class="topbar-en">SETTINGS</span></button>
     </nav>
   </header>
@@ -54,16 +64,16 @@ MASK</div>
   </div>
 
   <!-- 底栏：居中衬线页码 + 通栏 1px 细线（5 段刻度，红点静态示于第 1 段） -->
-  <footer class="pager" aria-hidden="true">
+  <footer class="pager">
     <p class="pager-num">
       <b>01</b><span class="pager-sep">—</span><span>05</span>
     </p>
-    <div class="pager-track">
-      <span class="pager-seg is-current"></span>
-      <span class="pager-seg"></span>
-      <span class="pager-seg"></span>
-      <span class="pager-seg"></span>
-      <span class="pager-seg"></span>
+    <div class="pager-track" role="tablist" aria-label="展品进度">
+      <button class="pager-seg is-current" data-i="0" aria-label="第 1 件"></button>
+      <button class="pager-seg" data-i="1" aria-label="第 2 件"></button>
+      <button class="pager-seg" data-i="2" aria-label="第 3 件"></button>
+      <button class="pager-seg" data-i="3" aria-label="第 4 件"></button>
+      <button class="pager-seg" data-i="4" aria-label="第 5 件"></button>
     </div>
   </footer>
 
@@ -75,7 +85,7 @@ MASK</div>
 
   <!-- 状态提示（无底色细字） -->
   <div id="hud" class="hud">
-    <div id="hudModel" class="hud-item">展品 EXHIBIT 1 / 5</div>
+    <div id="hudModel" class="hud-item" aria-live="polite">展品 EXHIBIT 1 / 5</div>
     <div id="hudGesture" class="hud-item">手势 GESTURE --</div>
     <div id="hudTip" class="hud-item hud-tip">单击切面具 · 拖拽旋转 · 滚轮缩放 · 摄像头:捏合切换/握拳爆散/双手拉距缩放</div>
   </div>
@@ -87,9 +97,11 @@ MASK</div>
       <div class="intro-title">贵傩戏-傩文化数字博物馆<span class="intro-seal" aria-hidden="true">傩</span></div>
       <p class="intro-sub">Nuo Culture Digital Museum · 点云展陈 · 手势交互 · Gesture Interactive</p>
       <div class="intro-rule" aria-hidden="true"></div>
+      <div class="load-line" aria-hidden="true"><i></i></div>
       <div id="introStatus" class="intro-status">正在准备馆藏 PREPARING…</div>
       <div id="introGallery" class="intro-gallery" hidden></div>
       <p class="intro-hint" id="introHint" hidden>选择一件展品入馆 · 馆内有语音向导 · TAP TO ENTER</p>
+      <button id="introThemeBtn" class="intro-theme" title="切换展厅主题">夜 NIGHT</button>
     </div>
   </div>
 
@@ -144,6 +156,18 @@ MASK</div>
       </div>
       <p class="hint">支持 .ply 点云（含颜色）与 .glb/.gltf/.obj（自动采样为点云）。新增模型会加入捏合切换序列，并保存在浏览器本地。</p>
     </section>
+  </aside>
+
+  <!-- 展品详情卡(Victory 手势 / INFO 按钮) -->
+  <aside id="detailCard" class="detail-card" aria-hidden="true">
+    <div class="dc-head">
+      <span id="detailName" class="dc-name">—</span>
+      <span id="detailEn" class="dc-en"></span>
+      <button id="detailClose" class="dc-close" aria-label="关闭详情">✕</button>
+    </div>
+    <p id="detailEra" class="dc-era"></p>
+    <p id="detailDesc" class="dc-desc"></p>
+    <p class="dc-hint">VICTORY 手势亦可开合 · 双手拉距缩放细节</p>
   </aside>
 
   <script type="module" src="/src/main.js"></script>

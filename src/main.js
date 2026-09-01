@@ -25,6 +25,7 @@ const defaultCfg = {
   pointSize: 1.15,
   music: true,
   musicVolume: 0.45,
+  theme: "light", // light=纯白展厅 | dark=黑色空间展厅
 };
 function loadCfg() {
   try { return { ...defaultCfg, ...JSON.parse(localStorage.getItem(LS_KEY) ?? "{}") }; }
@@ -70,6 +71,27 @@ function applyCfg() {
   document.documentElement.style.setProperty("--gold", cfg.color);
   $("textLayer").classList.toggle("hidden", !cfg.textVisible);
   injectFontCss(cfg.font);
+  applyTheme(cfg.theme ?? "light");
+}
+
+// ---------- 主题(纯白展厅 / 黑色空间展厅) ----------
+function applyTheme(mode) {
+  const dark = mode === "dark";
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  window.__stage?.setTheme?.(mode);
+  // 主标题色跟随主题(用户自定色仅在白主题生效; 黑主题固定浅色保对比)
+  const title = $("titleText");
+  if (title) title.style.color = dark ? "#E8E8EA" : (cfg.color ?? "#1A1A1A");
+  const btn = $("themeBtn");
+  if (btn) btn.textContent = dark ? "昼 DAY" : "夜 NIGHT";
+  const ib = $("introThemeBtn");
+  if (ib) ib.textContent = dark ? "昼 DAY" : "夜 NIGHT";
+}
+function toggleTheme() {
+  cfg.theme = (cfg.theme === "dark") ? "light" : "dark";
+  saveCfg();
+  applyTheme(cfg.theme);
+  window.dispatchEvent(new CustomEvent("theme-change", { detail: { theme: cfg.theme } }));
 }
 
 function hexA(hex, a) {
@@ -115,7 +137,15 @@ async function main() {
 
   // 全量加载所有面具 → 生成入口画廊缩略图 → 弧形同屏陈列
   window.__step = "all-models";
-  const geos = await Promise.all(defs.map((d) => ensureGeometry(d).catch(() => null)));
+  let __loaded = 0;
+  const geos = await Promise.all(defs.map(async (d) => {
+    const g = await ensureGeometry(d).catch(() => null);
+    __loaded++;
+    introStatus.textContent = `加载馆藏 ${__loaded} / ${defs.length}`;
+    const bar = document.querySelector(".load-line i");
+    if (bar) bar.style.width = `${Math.round((__loaded / defs.length) * 100)}%`;
+    return g;
+  }));
 
   // 入口画廊:逐件渲染缩略图(临时挂载,不动共享几何缓存)
   window.__step = "thumbs";
@@ -176,6 +206,7 @@ const guideSteps = [
   "拖动画面（或对镜头移动手掌），转动面具看看",
   "单击画面（或对镜头捏合手指），换下一件展品",
   "对镜头握拳，看它散成星尘 · 右下角麦克风可语音提问",
+  "比 V 手势开详情 · 竖大拇指点赞 · 顶栏 夜/昼 切换展厅",
 ];
 let guideIdx = -1;
 function guideAdvance() {
@@ -215,6 +246,29 @@ window.__getMaskCloud = function () {
 window.__getMaskKey = function () {
   return defs[currentModelIndex]?.key ?? null;
 };
+// ---------- 详情卡(Victory 手势 / INFO 按钮) ----------
+let detailOpen = false;
+window.__toggleDetail = function () {
+  const card = $("detailCard");
+  const def = defs[currentModelIndex];
+  if (!card || !def) return;
+  detailOpen = !detailOpen;
+  if (detailOpen) {
+    $("detailName").textContent = def.label ?? def.name;
+    $("detailEn").textContent = def.labelEn ?? "";
+    $("detailEra").textContent = def.era ?? "";
+    $("detailDesc").textContent = def.desc ?? "";
+  }
+  card.classList.toggle("open", detailOpen);
+  card.setAttribute("aria-hidden", String(!detailOpen));
+};
+window.addEventListener("detail-toggle", () => {
+  if (window.__arMask?.isOn?.()) return; // AR 中不开详情卡
+  window.__toggleDetail();
+});
+window.addEventListener("ar-mask-change", (e) => {
+  if (e.detail?.open && detailOpen) window.__toggleDetail(); // 进 AR 收起
+});
 window.__getMaskManifestFit = function () {
   const key = defs[currentModelIndex]?.key;
   return window.__nuoManifest?.models?.[key]?.fit ?? null;
@@ -319,10 +373,32 @@ function updateExhibitUI(idx) {
   if (noEl) noEl.textContent = no;
   if (nameEl) nameEl.textContent = def.label ?? def.name;
   if (enEl) enEl.textContent = def.labelEn ?? "NUO MASK";
+  // 展签入场动画: 镜头先动, 文字延迟淡入
+  const tb = document.querySelector(".topbar-left");
+  if (tb) { tb.classList.remove("swap"); void tb.offsetWidth; tb.classList.add("swap"); }
+  // 详情卡展开时刷新内容
+  if (typeof detailOpen !== "undefined" && detailOpen && defs.length) {
+    $("detailName").textContent = def.label ?? def.name;
+    $("detailEn").textContent = def.labelEn ?? "";
+    $("detailEra").textContent = def.era ?? "";
+    $("detailDesc").textContent = def.desc ?? "";
+  }
   const b = document.querySelector(".pager-num b");
   const total = document.querySelectorAll(".pager-num span")[1];
   if (b) b.textContent = no;
   if (total) total.textContent = String(defs.length).padStart(2, "0");
+  const track = document.querySelector(".pager-track");
+  if (track && track.children.length !== defs.length) {
+    track.innerHTML = "";
+    defs.forEach((_, i) => {
+      const b = document.createElement("button");
+      b.className = "pager-seg";
+      b.dataset.i = String(i);
+      b.setAttribute("aria-label", `第 ${i + 1} 件`);
+      b.addEventListener("click", () => switchTo(i));
+      track.appendChild(b);
+    });
+  }
   document.querySelectorAll(".pager-seg").forEach((seg, i) => {
     seg.classList.toggle("is-current", i === idx);
   });
@@ -452,10 +528,14 @@ const THREE_D2R = Math.PI / 180;
   window.addEventListener("keydown", (e) => {
     const t = e.target;
     if (t && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName))) return;
+    if (!document.querySelector("#intro")?.classList.contains("hide")) return; // 画廊态不响应展品键
     if (e.key === "ArrowRight") {
       switchTo(currentModelIndex + 1);
     } else if (e.key === "ArrowLeft") {
       switchTo(currentModelIndex - 1);
+    } else if (/^[1-9]$/.test(e.key)) {
+      const n = Number(e.key) - 1;
+      if (n < defs.length) switchTo(n);
     } else if (e.key === " ") {
       e.preventDefault();
       spinPaused = !spinPaused;
@@ -533,20 +613,55 @@ function bindUI() {
   // 无进入界面:加载完成后自动进展厅;BGM 由首次任意交互触发(自动播放策略)
   // 摄像头改为设置面板开关(见下方 camEnabled 绑定)
 
-  // ---------- BGM 背景音乐 ----------
+  // 底栏刻度: 可点击直达展品
+document.querySelectorAll(".pager-seg").forEach((b) => {
+  b.addEventListener("click", () => {
+    const i = Number(b.dataset.i);
+    if (!Number.isNaN(i)) switchTo(i);
+  });
+});
+
+// 主题切换按钮(顶栏 + 画廊态各一)
+const themeBtn = $("themeBtn");
+if (themeBtn) themeBtn.addEventListener("click", toggleTheme);
+const introThemeBtn = $("introThemeBtn");
+if (introThemeBtn) introThemeBtn.addEventListener("click", toggleTheme);
+// 详情卡按钮
+const infoBtn = $("infoBtn");
+if (infoBtn) infoBtn.addEventListener("click", () => window.__toggleDetail?.());
+const detailClose = $("detailClose");
+if (detailClose) detailClose.addEventListener("click", () => window.__toggleDetail?.());
+
+// ---------- BGM 背景音乐 ----------
   let bgmEl = null;
   function startBgm() {
     if (bgmEl || !cfg.music) return;
     bgmEl = new Audio("./audio/bgm.mp3");
     bgmEl.loop = true;
-    bgmEl.volume = cfg.musicVolume ?? 0.45;
+    bgmEl.volume = 0;
     bgmEl.play().then(() => {
+      fadeBgm(cfg.musicVolume ?? 0.45, 2000); // 2s 淡入, 起播不突兀
       window.__bgm = bgmEl;
       const t = $("musicToggle");
       if (t) { t.checked = true; t.disabled = false; }
     }).catch((e) => console.warn("BGM 播放失败", e));
   }
   window.__startBgm = startBgm;
+  // 音量渐变(专业曲线: 起播/ducking 不瞬切)
+  window.__fadeBgm = function (to, ms = 400) {
+    if (!bgmEl) return;
+    const token = (window.__fadeBgmToken = (window.__fadeBgmToken ?? 0) + 1);
+    const from = bgmEl.volume;
+    const t0 = performance.now();
+    const tick = () => {
+      if (!bgmEl || window.__fadeBgmToken !== token) return; // 被新渐变取代: 旧 tick 停止
+      const k = Math.min(1, (performance.now() - t0) / ms);
+      bgmEl.volume = Math.max(0, Math.min(1, from + (to - from) * (k * k * (3 - 2 * k))));
+      if (k < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  };
+  window.__musicBaseVol = function () { return cfg.musicVolume ?? 0.45; };
   const onceGesture = () => {
     startBgm();
     initVoice();

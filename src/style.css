@@ -27,6 +27,31 @@
   color-scheme: light;
 }
 
+/* ---------- 黑色空间主题(夜间展厅) ---------- */
+html[data-theme="dark"] {
+  --bg-paper: #0A0A0C;            /* 深空底 */
+  --bg-ink: #E8E8EA;              /* 强调底反转(按钮浅字深) */
+  --ink-100: #E8E8EA;             /* 主文字 87% */
+  --ink-70: #9E9EA3;              /* 次级 60% */
+  --ink-45: #63636A;              /* 弱 38% */
+  --ink-25: rgba(255, 255, 255, .10);
+  --seal-red: #C8202E;            /* 印章红提亮一档保黑底对比 */
+  --seal-red-hover: #D6454F;
+  --gold: #E8E8EA;
+  color-scheme: dark;
+}
+html[data-theme="dark"] .seal { background: #C8202E; }
+html[data-theme="dark"] .seal::after { border-color: rgba(255, 255, 255, .4); }
+html[data-theme="dark"] .mask-card img { box-shadow: 0 0 0 1px var(--ink-25), 0 6px 16px rgba(0, 0, 0, .5); }
+html[data-theme="dark"] .mask-card:hover img { box-shadow: 0 0 0 1px rgba(255, 255, 255, .35), 0 10px 22px rgba(0, 0, 0, .6); }
+html[data-theme="dark"] .panel { background: rgba(16, 16, 20, .98); }
+html[data-theme="dark"] .panel-head { background: rgba(16, 16, 20, .98); }
+html[data-theme="dark"] .ar-bar { background: rgba(10, 10, 12, .8); }
+html[data-theme="dark"] .ar-btn { background: #16161A; color: var(--ink-100); }
+html[data-theme="dark"] .ar-btn-primary { background: var(--ink-100); color: #0A0A0C; }
+html[data-theme="dark"] .hand-view { background: rgba(0, 0, 0, .55); border-color: rgba(255, 255, 255, .12); }
+html[data-theme="dark"] ::selection { background: rgba(255, 255, 255, .18); color: #fff; }
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 /* AR 试戴全屏态(main.js 切换 body.ar-open): 隐藏展馆 UI, 只留 AR 层 */
@@ -222,7 +247,7 @@ html, body {
   letter-spacing: .5vmin;
   line-height: 1.9;                       /* 多列（NUO/CULTURE/…）列距 */
   color: var(--gold);
-  opacity: .62;
+  opacity: .42; /* 装饰性竖排字降透明度, 不与点云争主体 */
   white-space: pre;
 }
 .side-rule {
@@ -275,13 +300,28 @@ html, body {
   display: flex;
   gap: 2vmin;
 }
-.pager-seg {                              /* 通栏 1px 细线，5 段刻度 */
+.pager { pointer-events: none; }          /* 容器穿透, 刻度钮可点 */
+.pager-seg {                              /* 可点击刻度: 18px 触控高 + 1px 视线 */
+  appearance: none;
   flex: 1;
+  height: 18px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  pointer-events: auto;
+  position: relative;
+  padding: 0;
+}
+.pager-seg::after {                       /* 1px 细线 */
+  content: "";
+  position: absolute;
+  left: 0; right: 0; top: 50%;
   height: 1px;
   background: var(--ink-25);
-  position: relative;
+  transition: background .24s var(--ease);
 }
-.pager-seg.is-current::before {           /* 4px 红点，静态示于第 1 段 */
+.pager-seg:hover::after { background: var(--ink-45); }
+.pager-seg.is-current::before {           /* 红点示当前 */
   content: "";
   position: absolute;
   left: 0; top: 50%;
@@ -289,6 +329,7 @@ html, body {
   width: .45vmin; height: .45vmin;
   border-radius: 50%;
   background: var(--seal-red);
+  transition: left .3s var(--ease);
 }
 
 /* ---------- 手部小视图 ---------- */
@@ -391,14 +432,14 @@ html, body {
   font-size: min(1.85vmin, 13px);
   line-height: 1.6;
   letter-spacing: .55vmin;
-  color: rgba(22, 21, 15, .55);
+  color: var(--ink-70);
   margin-bottom: 4.2vmin;
   white-space: normal;
 }
 .intro-rule {                             /* 铭牌横向细线 */
   width: 100%;
   height: 1px;
-  background: rgba(22, 21, 15, .22);
+  background: var(--ink-25);
   margin: 0 auto 4.2vmin;
 }
 .intro-btn {
@@ -425,7 +466,7 @@ html, body {
 .intro-btn-ghost {
   background: transparent;
   color: var(--ink-100);
-  border: 1px solid rgba(22, 21, 15, .32);
+  border: 1px solid var(--ink-25);
 }
 .intro-btn-ghost:hover {
   background: transparent;
@@ -438,7 +479,7 @@ html, body {
   font-size: min(1.45vmin, 12px);
   line-height: 1.6;
   letter-spacing: .2vmin;
-  color: rgba(22, 21, 15, .5);
+  color: var(--ink-45);
 }
 .intro-status::before {
   content: ""; display: inline-block;
@@ -511,7 +552,7 @@ html, body {
 .row > span { flex: 0 0 88px; color: var(--ink-70); }
 .row input[type="text"], .row select {
   flex: 1; min-width: 0;
-  background: rgba(22, 21, 15, .05);
+  background: var(--ink-25);
   border: 1px solid var(--ink-25);
   color: var(--ink-100);
   border-radius: 2px;
@@ -589,6 +630,60 @@ html, body {
 .model-list button:hover { color: var(--ink-100); }
 
 /* ---------- 细节 ---------- */
+button:active { transform: translateY(1px); }
+.mask-card:active { transform: scale(.97); }
+.mask-card { will-change: transform; }
+
+/* 展签入场: 镜头先动, 文字 400ms ease-out 上移淡入 */
+@keyframes swapIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.topbar-left.swap .exhibit-name,
+.topbar-left.swap .exhibit-en,
+.topbar-left.swap .exhibit-no { animation: swapIn .4s var(--ease) both; }
+.topbar-left.swap .exhibit-en { animation-delay: .06s; }
+
+/* 馆藏加载进度线(1px 通栏 + 红色填充) */
+.load-line {
+  position: relative;
+  width: 100%;
+  height: 1px;
+  background: var(--ink-25);
+  margin: -2.6vmin auto 4.2vmin;
+  overflow: hidden;
+}
+.load-line i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--seal-red);
+  transition: width .45s var(--ease);
+}
+
+/* ---------- 展品详情卡 ---------- */
+.detail-card {
+  position: fixed;
+  right: 4vmin;
+  top: 50%;
+  transform: translate(calc(100% + 6vmin), -50%);
+  width: min(360px, 86vw);
+  z-index: 25;
+  background: var(--bg-paper);
+  border: 1px solid var(--ink-25);
+  border-radius: 6px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .14);
+  padding: 18px 20px 14px;
+  transition: transform .45s var(--ease), opacity .45s var(--ease);
+  opacity: 0;
+}
+.detail-card.open { transform: translate(0, -50%); opacity: 1; }
+.dc-head { display: flex; align-items: baseline; gap: 10px; }
+.dc-name { font-family: var(--font-sans); font-weight: 600; font-size: 20px; letter-spacing: 2px; color: var(--ink-100); }
+.dc-en { flex: 1; font-family: var(--font-num); font-size: 10px; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-45); }
+.dc-close { background: none; border: none; color: var(--ink-45); font-size: 14px; cursor: pointer; padding: 4px 6px; }
+.dc-close:hover { color: var(--ink-100); }
+.dc-era { font-family: var(--font-num); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--seal-red); margin: 8px 0 10px; }
+.dc-desc { font-size: 13px; line-height: 1.8; color: var(--ink-70); letter-spacing: .5px; margin: 0 0 10px; }
+.dc-hint { font-size: 10px; letter-spacing: .14em; color: var(--ink-45); margin: 0; text-transform: uppercase; }
+
 ::selection { background: rgba(22, 21, 15, .16); color: var(--ink-100); }
 button:focus-visible, select:focus-visible { outline: 1px solid var(--ink-45); outline-offset: 2px; }
 
@@ -657,6 +752,22 @@ button:focus-visible, select:focus-visible { outline: 1px solid var(--ink-45); o
   margin-top: .5vmin;
   line-height: 1.3;
 }
+.intro-theme {
+  position: absolute;
+  top: 0; right: 0;
+  background: none;
+  border: 1px solid var(--ink-25);
+  border-radius: 999px;
+  color: var(--ink-45);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 2px;
+  padding: 6px 14px;
+  cursor: pointer;
+  min-height: 32px;
+}
+.intro-theme:hover { color: var(--ink-100); border-color: var(--ink-45); }
+
 .intro-hint {
   font-family: var(--font-sans);
   font-size: min(1.7vmin, 13px);
